@@ -17,8 +17,26 @@ class DomainError(Exception):
     title: str = "Bad request"
     detail: str = "The request could not be processed."
 
+    def response_headers(self) -> dict[str, str]:
+        """Extra headers for the error response. Most errors need none."""
+        return {}
 
-def _problem(
+
+class RateLimited(DomainError):
+    status_code = 429
+    code = "rate_limited"
+    title = "Too many requests"
+    detail = "Too many attempts. Try again later."
+
+    def __init__(self, retry_after: int) -> None:
+        super().__init__()
+        self.retry_after = retry_after
+
+    def response_headers(self) -> dict[str, str]:
+        return {"Retry-After": str(self.retry_after)}
+
+
+def problem_response(
     request: Request,
     *,
     status_code: int,
@@ -26,6 +44,7 @@ def _problem(
     title: str,
     detail: str,
     errors: list[dict[str, str]] | None = None,
+    headers: dict[str, str] | None = None,
 ) -> JSONResponse:
     """Build the error body from docs/api.md."""
     # Read from request.state, not the context variable: the unhandled-error handler runs
@@ -42,19 +61,22 @@ def _problem(
     if errors is not None:
         content["errors"] = errors
     return JSONResponse(
-        status_code=status_code, content=content, headers={REQUEST_ID_HEADER: request_id}
+        status_code=status_code,
+        content=content,
+        headers={**(headers or {}), REQUEST_ID_HEADER: request_id},
     )
 
 
 def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(DomainError)
     async def handle_domain_error(request: Request, exc: DomainError) -> JSONResponse:
-        return _problem(
+        return problem_response(
             request,
             status_code=exc.status_code,
             code=exc.code,
             title=exc.title,
             detail=exc.detail,
+            headers=exc.response_headers(),
         )
 
     @app.exception_handler(RequestValidationError)
@@ -70,7 +92,7 @@ def register_error_handlers(app: FastAPI) -> None:
             }
             for error in exc.errors()
         ]
-        return _problem(
+        return problem_response(
             request,
             status_code=422,
             code="validation_error",
@@ -84,7 +106,7 @@ def register_error_handlers(app: FastAPI) -> None:
         # Only the exception type is logged here. The server already prints the traceback, and
         # the exception message can contain request data.
         logger.error("unhandled exception type=%s", type(exc).__name__)
-        return _problem(
+        return problem_response(
             request,
             status_code=500,
             code="internal_error",

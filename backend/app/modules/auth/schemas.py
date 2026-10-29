@@ -24,6 +24,15 @@ class RegisterRequest(BaseModel):
     password: Password
 
 
+class LoginRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: NormalizedEmail
+    # No minimum: a wrong-length password just fails to match. The maximum stops anyone making
+    # the server hash an enormous string.
+    password: Annotated[str, StringConstraints(min_length=1, max_length=128)]
+
+
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -34,4 +43,10 @@ class UserOut(BaseModel):
 
 
 class RegisterResponse(BaseModel):
+    user: UserOut
+
+
+class LoginResponse(BaseModel):
+    access_token: str
+    expires_in: int
     user: UserOut
