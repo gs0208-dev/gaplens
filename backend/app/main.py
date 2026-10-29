@@ -6,6 +6,7 @@ from app.api.router import api_router
 from app.core.config import get_settings
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging
+from app.core.rate_limit import register_rate_limiting
 from app.core.request_id import REQUEST_ID_HEADER, RequestIdMiddleware
 
 
@@ -31,6 +32,7 @@ def create_app() -> FastAPI:
     )
     app.add_middleware(RequestIdMiddleware)
     register_error_handlers(app)
+    register_rate_limiting(app)
 
     app.include_router(health_router)
     app.include_router(api_router)

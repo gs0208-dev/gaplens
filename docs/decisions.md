@@ -142,3 +142,33 @@ Decision:
 - The database engine sets `hide_parameters=True`. Without it, SQLAlchemy puts the bound values (an email, a password hash) into error messages that could reach the logs.
 Consequences: the register rate limit (5 per hour per IP) arrives with `slowapi` in S1-3, and the `auth.register` audit event in S1-6, both as named in `docs/sprints.md`. Until S1-3 the endpoint has no rate limit.
 Alternatives: a pre-check query before the insert (race), matching on the error message text (breaks if the database language changes), catching every `IntegrityError` as a duplicate (hides real faults).
+
+## ADR-019: PyJWT for access tokens
+
+Date: 2026-10-30
+Context: after login the client needs a short-lived proof of identity that the server can check without a database lookup on every request.
+Decision: add `PyJWT` and sign access tokens with HS256 using a secret from `JWT_SECRET`. Claims are `sub`, `role`, `iat`, `exp`, `iss` and `aud`, as in `docs/security.md`. `JWT_SECRET` has no default and must be at least 32 characters, so the app cannot start with a guessable key. Only issuing is built in S1-3. Verification, which must pass the allowed algorithm list explicitly and require `exp`, `iss` and `aud`, comes with `/auth/me` in S1-5.
+Consequences: a stolen access token works until it expires (15 minutes) and cannot be revoked early, which is why it is short-lived and kept in memory on the client. One shared secret means whoever holds it can mint tokens for anyone, so it lives only in environment variables. Rotating it logs everyone out.
+Alternatives: server-side sessions in the database (revocable, but a lookup on every request), `python-jose` or `authlib` (larger or less maintained for this need), RS256 asymmetric keys (useful when other services verify tokens, which is not the case here).
+
+## ADR-020: slowapi for IP rate limits, `limits` for the per-email limit
+
+Date: 2026-10-30
+Context: `docs/security.md` asks for login limits per IP and per email, and limits on other endpoints later.
+Decision: add `slowapi`, which is in the fixed stack, for per-IP limits as a decorator on each route, with a moving window. The per-email limit cannot use slowapi, because its key function only sees the request and not the JSON body. It uses the `limits` library directly (slowapi is built on it), through a small `EmailFailureLimiter` class. `limits` is listed as its own dependency because the code imports it. Counters are in memory, as accepted in `docs/security.md`.
+Consequences: limits reset when the API restarts and are per instance, so with more than one instance they must move to Postgres or Redis. Behind a proxy the client IP is the proxy's until forwarded headers are trusted from the platform only, which is a Sprint 4 deploy task. Tests reset the counters between tests.
+Alternatives: writing all limits by hand (more code to explain), a Redis-backed limiter now (a new service for one instance), limiting by IP only (does not stop one account being attacked from many addresses).
+
+## ADR-021: How login is built (2026-10-30)
+
+Context: S1-3 is the core of authentication, so each choice below is one the owner must be able to explain.
+Decision:
+- A wrong password, an unknown email and a disabled account return the same `401 invalid_credentials`. For an unknown email the service still verifies the submitted password against a fixed dummy hash, so the response takes about as long and timing does not reveal which emails have accounts. A test checks that the verification runs.
+- The email limit counts failures only, and checks with `test()` before verifying, which does not use up an attempt. A person who logs in correctly is never locked out by their own logins. The cost is that a blocked email stays blocked even for the correct password until the window passes. The email is counted as submitted, whether or not an account exists.
+- The refresh token is 256 random bits from `secrets.token_urlsafe(32)`. The database stores only its SHA-256. Plain SHA-256 is right here, unlike for passwords, because the input cannot be guessed, and lookups need a fast, repeatable hash.
+- Every login starts a new `family_id`. Rotation in S1-4 keeps all tokens of one login in the same family, so reuse of an old token can revoke exactly that login.
+- The refresh cookie is `HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth`, so scripts cannot read it, it only travels over HTTPS, it is never sent from another site, and it is only sent to the auth endpoints.
+- The login password has no minimum length but a maximum of 128, so a request cannot make the server hash a huge string.
+- Not built yet: refresh and rotation (S1-4), access token verification (S1-5), audit events (S1-6). Rehash-on-login when the hashing parameters change is not built, because they have never changed.
+Consequences: the login endpoint's response time is dominated by one argon2 verification, on purpose. The rate limits can lock a real user out for a short time if someone else keeps guessing their email.
+Alternatives: different errors for each failure (lets attackers list accounts), counting all attempts toward the email limit (locks out real users), returning the refresh token in the body (readable by scripts), storing the refresh token unhashed (a database leak would then hand out sessions).

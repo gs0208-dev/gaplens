@@ -17,6 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DATABASE_URL: postgresql+asyncpg://gaplens:ci-only-not-a-secret@localhost:5432/gaplens
+      # Tests replace this with a random value; it only has to exist for the app to start.
+      JWT_SECRET: ci-only-not-a-secret-ci-only-not-a-secret
     services:
       postgres:
         image: pgvector/pgvector:pg16
