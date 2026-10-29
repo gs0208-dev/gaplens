@@ -1,0 +1,6 @@
+---
+description: GapLens project rules
+alwaysApply: true
+---
+
+Read and follow `AGENTS.md` at the repository root before doing anything. It is the single source of truth for stack, commands, workflow, security, AI and UI rules. Read the files it lists in its "Read first" table when your task touches those areas. Run `make check` before you finish a task.

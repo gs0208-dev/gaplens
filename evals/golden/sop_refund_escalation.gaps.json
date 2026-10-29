@@ -1,0 +1,54 @@
+{
+  "document": "datasets/sop_refund_escalation.md",
+  "gaps": [
+    {
+      "id": "G1",
+      "kind": "contradiction",
+      "severity": "high",
+      "sections": ["3.1", "5.3"],
+      "what_is_wrong": "L1 refund approval limit is INR 5,000 in 3.1 and INR 2,500 in 5.3."
+    },
+    {
+      "id": "G2",
+      "kind": "unclear",
+      "severity": "high",
+      "sections": ["4.1"],
+      "what_is_wrong": "Escalations go to 'the relevant manager' with no named role or contact, and no response time."
+    },
+    {
+      "id": "G3",
+      "kind": "unclear",
+      "severity": "medium",
+      "sections": ["3.4"],
+      "what_is_wrong": "Refunds are processed 'promptly' with no number of days."
+    },
+    {
+      "id": "G4",
+      "kind": "missing",
+      "severity": "medium",
+      "sections": ["7.1"],
+      "what_is_wrong": "No procedure for disputed payments or chargebacks, although several payment methods are listed."
+    },
+    {
+      "id": "G5",
+      "kind": "unclear",
+      "severity": "medium",
+      "sections": ["6.1"],
+      "what_is_wrong": "Records are kept for 'a reasonable period' with no retention duration."
+    },
+    {
+      "id": "G6",
+      "kind": "unclear",
+      "severity": "medium",
+      "sections": ["2.1", "6.2"],
+      "what_is_wrong": "Support is closed on Sundays but urgent Sunday complaints go to an on-call agent that is not defined (who, how reached, what counts as urgent)."
+    },
+    {
+      "id": "G7",
+      "kind": "missing",
+      "severity": "low",
+      "sections": ["3.2", "3.3"],
+      "what_is_wrong": "No fallback approver when the team lead or finance department is unavailable."
+    }
+  ]
+}

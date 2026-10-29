@@ -1,0 +1,10 @@
+{"id": "Q1", "question": "What is the refund limit for L1 agents?", "type": "conflict", "expected_contains": ["5,000", "2,500"], "expected_sections": ["3.1", "5.3"], "grounded": true}
+{"id": "Q2", "question": "Who approves refunds above INR 5,000 and up to INR 25,000?", "type": "answerable", "expected_contains": ["team lead"], "expected_sections": ["3.2"], "grounded": true}
+{"id": "Q3", "question": "Who must approve refunds above INR 25,000?", "type": "answerable", "expected_contains": ["finance"], "expected_sections": ["3.3"], "grounded": true}
+{"id": "Q4", "question": "What are the support hours?", "type": "answerable", "expected_contains": ["9:00", "18:00", "Monday to Saturday"], "expected_sections": ["2.1"], "grounded": true}
+{"id": "Q5", "question": "How quickly are email requests acknowledged?", "type": "answerable", "expected_contains": ["24 hours"], "expected_sections": ["2.2"], "grounded": true}
+{"id": "Q6", "question": "What share of closed tickets do team leads review each week?", "type": "answerable", "expected_contains": ["5 percent"], "expected_sections": ["5.1"], "grounded": true}
+{"id": "Q7", "question": "Does the customer have to be told when a complaint is escalated?", "type": "answerable", "expected_contains": ["yes"], "expected_sections": ["4.3"], "grounded": true}
+{"id": "Q8", "question": "Which named manager handles escalated complaints?", "type": "unanswerable", "expected_contains": [], "expected_sections": [], "grounded": false}
+{"id": "Q9", "question": "For how many days are chat transcripts kept?", "type": "unanswerable", "expected_contains": [], "expected_sections": [], "grounded": false}
+{"id": "Q10", "question": "How are chargebacks handled?", "type": "unanswerable", "expected_contains": [], "expected_sections": [], "grounded": false}
