@@ -34,10 +34,10 @@ Goal: a clean repo that runs, with rules, CI and a health check.
 | S0-5 CI | Lint, format check, typecheck and tests run on every push and pull request |
 
 Verification checklist (to be done on the owner's machine):
-- [ ] `cp .env.example .env`, set `POSTGRES_PASSWORD`
-- [ ] `make up` succeeds, `make ps` shows `db` and `api` healthy
-- [ ] `curl localhost:8000/health/ready` returns `{"status":"ok","database":"up"}`
-- [ ] `docker compose exec db psql -U gaplens -c "\dx"` lists `vector`
+- [x] `cp .env.example .env`, set `POSTGRES_PASSWORD`
+- [x] `make up` succeeds, `make ps` shows `db` and `api` healthy
+- [x] `curl localhost:8000/health/ready` returns `{"status":"ok","database":"up"}`
+- [x] `docker compose exec db psql -U gaplens -c "\dx"` lists `vector`
 - [x] `make install && make check` passes
 - [ ] Push to GitHub; CI is green
 
