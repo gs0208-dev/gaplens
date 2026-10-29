@@ -1,5 +1,6 @@
 .PHONY: help install up down logs ps test lint fmt typecheck check db-shell
 
+PYTHON ?= python3.12
 VENV := backend/.venv
 BIN  := $(VENV)/bin
 
@@ -7,7 +8,7 @@ help: ## List commands
 	@grep -E "^[a-zA-Z_-]+:.*## " $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "%-12s %s\n", $$1, $$2}'
 
 install: ## Create backend venv and install dev dependencies
-	python3 -m venv $(VENV)
+	$(PYTHON) -m venv $(VENV)
 	$(BIN)/python -m pip install --upgrade pip
 	$(BIN)/python -m pip install -e "backend[dev]"
 
