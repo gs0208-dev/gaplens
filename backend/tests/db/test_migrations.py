@@ -1,19 +1,12 @@
 import asyncio
-import uuid
-from collections.abc import AsyncIterator
-from pathlib import Path
 
 import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import text
-from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine
 
-from app.core.config import get_settings
-
-ALEMBIC_INI = Path(__file__).resolve().parents[2] / "alembic.ini"
 AUTH_TABLES = {"users", "refresh_tokens", "audit_events"}
 DOCUMENTED_INDEXES = {
     "users_email_lower_uidx",
@@ -24,38 +17,6 @@ DOCUMENTED_INDEXES = {
     "audit_events_actor_created_idx",
     "audit_events_resource_idx",
 }
-
-
-@pytest.fixture
-async def empty_database_url() -> AsyncIterator[str]:
-    """A brand new database that only this test uses, so the dev database is never touched."""
-    admin_url = make_url(get_settings().database_url)
-    name = f"gaplens_test_{uuid.uuid4().hex}"
-    admin_engine = create_async_engine(admin_url, isolation_level="AUTOCOMMIT")
-    async with admin_engine.connect() as connection:
-        await connection.execute(text(f'CREATE DATABASE "{name}"'))
-    try:
-        yield admin_url.set(database=name).render_as_string(hide_password=False)
-    finally:
-        async with admin_engine.connect() as connection:
-            await connection.execute(text(f'DROP DATABASE "{name}" WITH (FORCE)'))
-        await admin_engine.dispose()
-
-
-@pytest.fixture
-def alembic_config(empty_database_url: str) -> Config:
-    config = Config(str(ALEMBIC_INI))
-    config.set_main_option("sqlalchemy.url", empty_database_url)
-    # Keeps Alembic from reconfiguring logging, which would disturb pytest's log capture.
-    config.attributes["configure_logger"] = False
-    return config
-
-
-@pytest.fixture
-async def engine(empty_database_url: str) -> AsyncIterator[AsyncEngine]:
-    test_engine = create_async_engine(empty_database_url)
-    yield test_engine
-    await test_engine.dispose()
 
 
 async def upgrade(config: Config, revision: str = "head") -> None:

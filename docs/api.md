@@ -29,6 +29,8 @@ Every error response uses this shape (modeled on RFC 9457 problem details):
 
 `code` is a stable machine-readable value. `detail` is safe for display. Validation errors (422) add `errors: [{ "field": "email", "message": "..." }]`. Stack traces and internal messages never appear.
 
+Error codes in use: `validation_error` (422), `email_already_registered` (409), `internal_error` (500). Add a code to this list in the same commit as the code that returns it.
+
 Status codes: 400 malformed input, 401 missing or invalid token, 404 not found or not yours, 409 conflict (duplicate upload, analysis already running, email in use), 413 file too large, 415 unsupported file type, 422 validation, 429 rate limit, 500 unexpected, 503 dependency down.
 
 ## Operations (no auth)
@@ -47,6 +49,8 @@ Status codes: 400 malformed input, 401 missing or invalid token, 404 not found o
 | POST | `/auth/refresh` | none (cookie) | `200 { access_token, expires_in, user }`, rotates the cookie |
 | POST | `/auth/logout` | none (cookie) | `204`, revokes the token, clears the cookie |
 | GET | `/auth/me` | none | `200 { user }` |
+
+Register: the email is trimmed and lowercased, at most 254 characters. The password is 12 to 128 characters and is never trimmed or truncated. A duplicate email (compared ignoring case) is `409 email_already_registered`. Unknown fields are `422`.
 
 `user`: `{ id, email, role, created_at }`. Cookie: `refresh_token; HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth`.
 

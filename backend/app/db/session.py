@@ -9,6 +9,8 @@ engine = create_async_engine(
     pool_size=5,
     max_overflow=5,
     pool_pre_ping=True,
+    # Keeps bound values (emails, password hashes) out of database error messages and logs.
+    hide_parameters=True,
 )
 
 SessionFactory = async_sessionmaker(engine, expire_on_commit=False)
