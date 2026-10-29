@@ -49,7 +49,8 @@ For backend development:
 
 ```bash
 make install                # creates backend/.venv
-make check                  # lint, typecheck, tests
+make migrate                # applies database migrations to the Compose database
+make check                  # lint, typecheck, tests (database tests need make up)
 ```
 
 ## Documentation

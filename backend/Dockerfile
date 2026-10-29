@@ -8,6 +8,8 @@ WORKDIR /srv
 
 COPY pyproject.toml ./
 COPY app ./app
+COPY alembic.ini ./
+COPY alembic ./alembic
 RUN pip install .
 
 RUN useradd --system --uid 10001 --no-create-home appuser

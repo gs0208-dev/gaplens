@@ -1,4 +1,4 @@
-.PHONY: help install up down logs ps test lint fmt typecheck check db-shell
+.PHONY: help install up down logs ps migrate test lint fmt typecheck check db-shell
 
 PYTHON ?= python3.12
 VENV := backend/.venv
@@ -24,7 +24,10 @@ logs: ## Follow Compose logs
 ps: ## Show Compose service status
 	docker compose ps
 
-test: ## Run backend tests
+migrate: ## Apply database migrations to the Compose database
+	cd backend && .venv/bin/alembic upgrade head
+
+test: ## Run backend tests (database tests need make up)
 	cd backend && .venv/bin/pytest
 
 lint: ## ruff check and format check

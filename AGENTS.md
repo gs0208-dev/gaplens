@@ -46,7 +46,8 @@ Run these from the repo root. Use them instead of inventing your own.
 | `make install` | Create `backend/.venv` and install backend dev dependencies |
 | `make up` / `make down` | Start or stop the Compose stack (db, api) |
 | `make logs` | Follow Compose logs |
-| `make test` | Backend tests |
+| `make migrate` | Apply Alembic migrations to the Compose database |
+| `make test` | Backend tests (the database tests need `make up` first) |
 | `make lint` | ruff check and format check |
 | `make fmt` | ruff format and autofix |
 | `make typecheck` | mypy |

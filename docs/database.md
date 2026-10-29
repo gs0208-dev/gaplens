@@ -2,7 +2,7 @@
 
 PostgreSQL 16 with the `pgvector` extension. All timestamps are `timestamptz`. All primary keys are `uuid DEFAULT gen_random_uuid()` unless stated. Naming: plural snake_case tables, `<table_singular>_id` foreign keys, indexes named `<table>_<columns>_idx`, unique indexes `<table>_<columns>_uidx`.
 
-Schema changes go through Alembic only. The DDL below is the target after Sprint 3; each sprint adds its tables (see `docs/sprints.md`). The ORM models and the migrations must match this file; if you change one, change the others and this file in the same commit.
+Schema changes go through Alembic only. The DDL below is the target after Sprint 3. Tables are grouped under the sprint whose migration creates them, matching the stories in `docs/sprints.md`: Sprint 1 adds `users`, `refresh_tokens` and `audit_events`; Sprint 2 adds `documents`, `document_chunks`, `chat_threads`, `chat_messages` and `llm_calls`; Sprint 3 adds `analyses`, `findings` and `finding_citations`. The ORM models and the migrations must match this file; if you change one, change the others and this file in the same commit.
 
 ## Entity overview
 
@@ -57,6 +57,20 @@ CREATE INDEX refresh_tokens_user_id_idx   ON refresh_tokens (user_id);
 CREATE INDEX refresh_tokens_family_id_idx ON refresh_tokens (family_id);
 CREATE INDEX refresh_tokens_expires_at_idx ON refresh_tokens (expires_at);  -- cleanup job
 
+CREATE TABLE audit_events (
+  id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  actor_id      uuid REFERENCES users(id) ON DELETE SET NULL,
+  action        text        NOT NULL,              -- for example 'auth.login_failed'
+  resource_type text,
+  resource_id   uuid,
+  ip            inet,
+  request_id    text,
+  metadata      jsonb       NOT NULL DEFAULT '{}',
+  created_at    timestamptz NOT NULL DEFAULT now()
+);                                                -- append-only: the app role gets INSERT and SELECT only
+CREATE INDEX audit_events_actor_created_idx ON audit_events (actor_id, created_at DESC);
+CREATE INDEX audit_events_resource_idx ON audit_events (resource_type, resource_id);
+
 -- Sprint 2 -----------------------------------------------------------------
 
 CREATE TABLE documents (
@@ -100,6 +114,44 @@ CREATE TABLE document_chunks (
 CREATE UNIQUE INDEX document_chunks_doc_index_uidx ON document_chunks (document_id, chunk_index);
 -- Retrieval always filters by document_id first (see "Retrieval query").
 -- No vector index in v1: exact search over a few hundred rows is fast and has perfect recall.
+
+CREATE TABLE chat_threads (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  document_id uuid        NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+  owner_id    uuid        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title       text,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX chat_threads_document_updated_idx ON chat_threads (document_id, updated_at DESC);
+
+CREATE TABLE chat_messages (
+  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  thread_id  uuid        NOT NULL REFERENCES chat_threads(id) ON DELETE CASCADE,
+  role       text        NOT NULL CHECK (role IN ('user', 'assistant')),
+  content    text        NOT NULL,
+  grounded   boolean,                              -- assistant messages only
+  citations  jsonb       NOT NULL DEFAULT '[]',    -- display snapshot: [{chunk_id, section_label, quote}]
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX chat_messages_thread_created_idx ON chat_messages (thread_id, created_at, id);
+
+CREATE TABLE llm_calls (
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_id       uuid REFERENCES users(id) ON DELETE SET NULL,
+  purpose        text        NOT NULL CHECK (purpose IN ('gap_report', 'chat', 'eval')),
+  model          text        NOT NULL,
+  prompt_version text        NOT NULL,
+  input_tokens   integer,
+  output_tokens  integer,
+  latency_ms     integer,
+  status         text        NOT NULL CHECK (status IN ('ok', 'error', 'timeout', 'invalid_output')),
+  error_code     text,
+  request_id     text,
+  created_at     timestamptz NOT NULL DEFAULT now()
+);                                                -- no prompt or output content, by design
+CREATE INDEX llm_calls_owner_created_idx ON llm_calls (owner_id, created_at DESC);
+CREATE INDEX llm_calls_created_idx ON llm_calls (created_at);   -- retention cleanup
 
 -- Sprint 3 -----------------------------------------------------------------
 
@@ -147,60 +199,6 @@ CREATE TABLE finding_citations (
 );
 CREATE INDEX finding_citations_finding_id_idx ON finding_citations (finding_id);
 CREATE INDEX finding_citations_chunk_id_idx   ON finding_citations (chunk_id);
-
-CREATE TABLE chat_threads (
-  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  document_id uuid        NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-  owner_id    uuid        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  title       text,
-  created_at  timestamptz NOT NULL DEFAULT now(),
-  updated_at  timestamptz NOT NULL DEFAULT now()
-);
-CREATE INDEX chat_threads_document_updated_idx ON chat_threads (document_id, updated_at DESC);
-
-CREATE TABLE chat_messages (
-  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  thread_id  uuid        NOT NULL REFERENCES chat_threads(id) ON DELETE CASCADE,
-  role       text        NOT NULL CHECK (role IN ('user', 'assistant')),
-  content    text        NOT NULL,
-  grounded   boolean,                              -- assistant messages only
-  citations  jsonb       NOT NULL DEFAULT '[]',    -- display snapshot: [{chunk_id, section_label, quote}]
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-CREATE INDEX chat_messages_thread_created_idx ON chat_messages (thread_id, created_at, id);
-
--- Sprint 3 and 4: observability and audit ----------------------------------
-
-CREATE TABLE llm_calls (
-  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  owner_id       uuid REFERENCES users(id) ON DELETE SET NULL,
-  purpose        text        NOT NULL CHECK (purpose IN ('gap_report', 'chat', 'eval')),
-  model          text        NOT NULL,
-  prompt_version text        NOT NULL,
-  input_tokens   integer,
-  output_tokens  integer,
-  latency_ms     integer,
-  status         text        NOT NULL CHECK (status IN ('ok', 'error', 'timeout', 'invalid_output')),
-  error_code     text,
-  request_id     text,
-  created_at     timestamptz NOT NULL DEFAULT now()
-);                                                -- no prompt or output content, by design
-CREATE INDEX llm_calls_owner_created_idx ON llm_calls (owner_id, created_at DESC);
-CREATE INDEX llm_calls_created_idx ON llm_calls (created_at);   -- retention cleanup
-
-CREATE TABLE audit_events (
-  id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  actor_id      uuid REFERENCES users(id) ON DELETE SET NULL,
-  action        text        NOT NULL,              -- for example 'auth.login_failed'
-  resource_type text,
-  resource_id   uuid,
-  ip            inet,
-  request_id    text,
-  metadata      jsonb       NOT NULL DEFAULT '{}',
-  created_at    timestamptz NOT NULL DEFAULT now()
-);                                                -- append-only: the app role gets INSERT and SELECT only
-CREATE INDEX audit_events_actor_created_idx ON audit_events (actor_id, created_at DESC);
-CREATE INDEX audit_events_resource_idx ON audit_events (resource_type, resource_id);
 ```
 
 `updated_at` is set by the application on update (a shared SQLAlchemy `onupdate`), not by triggers, so behavior is visible in code.
