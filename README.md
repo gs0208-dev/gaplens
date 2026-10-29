@@ -68,7 +68,7 @@ make check                  # lint, typecheck, tests
 
 ## Roadmap
 
-- [ ] Sprint 0: Foundation (repo, Docker Compose, health endpoints, CI)
+- [x] Sprint 0: Foundation (repo, Docker Compose, health endpoints, CI)
 - [ ] Sprint 1: Auth
 - [ ] Sprint 2: RAG core
 - [ ] Sprint 3: Gap report and UI

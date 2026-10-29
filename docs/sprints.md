@@ -39,7 +39,7 @@ Verification checklist (to be done on the owner's machine):
 - [x] `curl localhost:8000/health/ready` returns `{"status":"ok","database":"up"}`
 - [x] `docker compose exec db psql -U gaplens -c "\dx"` lists `vector`
 - [x] `make install && make check` passes
-- [ ] Push to GitHub; CI is green
+- [x] Push to GitHub; CI is green
 
 Explain-back: how `/health/ready` differs from `/health/live` and why a platform needs both; what the request id is for.
 
