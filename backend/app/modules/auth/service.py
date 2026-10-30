@@ -134,6 +134,22 @@ async def refresh_session(
     return result
 
 
+async def logout(session: AsyncSession, refresh_token: str | None) -> None:
+    """End the login that the refresh token belongs to. Quiet if there is nothing to end."""
+    if not refresh_token:
+        return
+    await repository.revoke_family_of_token(
+        session, hash_refresh_token(refresh_token), datetime.now(UTC)
+    )
+    await session.commit()
+
+
+async def get_active_user(session: AsyncSession, user_id: uuid.UUID) -> User | None:
+    """The user if they exist and are enabled. Disabling an account takes effect at once."""
+    user = await repository.get_user_by_id(session, user_id)
+    return user if user is not None and user.is_active else None
+
+
 async def _issue_session(
     session: AsyncSession,
     user: User,

@@ -103,6 +103,25 @@ async def revoke_family(session: AsyncSession, family_id: uuid.UUID, now: dateti
     )
 
 
+async def revoke_family_of_token(session: AsyncSession, token_hash: str, now: datetime) -> None:
+    """Revoke every still-active token of the login that the given token belongs to.
+
+    It works even if the given token is an old, already-rotated one, because it looks the family
+    up first. An unknown token matches nothing. Served by refresh_tokens_token_hash_uidx for the
+    lookup and refresh_tokens_family_id_idx for the update.
+    """
+    family_of_token = select(RefreshToken.family_id).where(RefreshToken.token_hash == token_hash)
+    await session.execute(
+        update(RefreshToken)
+        .where(
+            RefreshToken.family_id == family_of_token.scalar_subquery(),
+            RefreshToken.revoked_at.is_(None),
+        )
+        .values(revoked_at=now)
+        .execution_options(synchronize_session=False)
+    )
+
+
 async def link_replacement(
     session: AsyncSession, old_token_id: uuid.UUID, new_token_id: uuid.UUID
 ) -> None:

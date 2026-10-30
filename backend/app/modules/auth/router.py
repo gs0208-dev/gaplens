@@ -3,17 +3,17 @@ from typing import Annotated
 from fastapi import APIRouter, Cookie, Depends, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_allowed_origin
+from app.api.deps import CurrentUser, require_allowed_origin
 from app.core.rate_limit import LOGIN_LIMIT, REGISTER_LIMIT, limiter
 from app.db.session import get_session
 from app.modules.auth import service
-from app.modules.auth.cookies import set_refresh_cookie
+from app.modules.auth.cookies import clear_refresh_cookie, set_refresh_cookie
 from app.modules.auth.schemas import (
     LoginRequest,
     RegisterRequest,
-    RegisterResponse,
     TokenResponse,
     UserOut,
+    UserResponse,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -46,9 +46,9 @@ async def register(
     request: Request,
     body: RegisterRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
-) -> RegisterResponse:
+) -> UserResponse:
     user = await service.register_user(session, body.email, body.password)
-    return RegisterResponse(user=UserOut.model_validate(user))
+    return UserResponse(user=UserOut.model_validate(user))
 
 
 @router.post("/login")
@@ -75,3 +75,24 @@ async def refresh(
     user_agent, ip = client_details(request)
     result = await service.refresh_session(session, refresh_token, user_agent=user_agent, ip=ip)
     return token_response(response, result)
+
+
+@router.get("/me")
+async def me(current_user: CurrentUser) -> UserResponse:
+    return UserResponse(user=UserOut.model_validate(current_user))
+
+
+@router.post(
+    "/logout",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_allowed_origin)],
+)
+async def logout(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    refresh_token: Annotated[str | None, Cookie()] = None,
+) -> Response:
+    await service.logout(session, refresh_token)
+    # The cookie is cleared whatever happened above, so logging out twice is harmless.
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    clear_refresh_cookie(response)
+    return response

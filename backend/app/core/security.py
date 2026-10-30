@@ -47,6 +47,32 @@ def create_access_token(user_id: uuid.UUID, role: str) -> str:
     return jwt.encode(claims, settings.jwt_secret.get_secret_value(), algorithm="HS256")
 
 
+class InvalidAccessTokenError(Exception):
+    """The token is expired, forged, for another audience, or missing a required claim."""
+
+
+def verify_access_token(token: str) -> uuid.UUID:
+    """Return the user id in a valid access token, or raise InvalidAccessTokenError.
+
+    The allowed algorithm is passed explicitly. Without it the token's own header would pick
+    the algorithm, which is how `alg: none` (no signature at all) attacks work. Every claim we
+    rely on is required, because a missing `exp` would otherwise mean the token never expires.
+    """
+    settings = get_settings()
+    try:
+        claims = jwt.decode(
+            token,
+            settings.jwt_secret.get_secret_value(),
+            algorithms=["HS256"],
+            audience=settings.jwt_audience,
+            issuer=settings.jwt_issuer,
+            options={"require": ["exp", "iat", "iss", "aud", "sub"]},
+        )
+        return uuid.UUID(claims["sub"])
+    except (jwt.InvalidTokenError, ValueError) as error:
+        raise InvalidAccessTokenError from error
+
+
 def generate_refresh_token() -> str:
     """An opaque 256-bit random value. It carries no information and is only a lookup key."""
     return secrets.token_urlsafe(32)

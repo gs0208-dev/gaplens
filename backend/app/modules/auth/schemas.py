@@ -42,7 +42,9 @@ class UserOut(BaseModel):
     created_at: datetime
 
 
-class RegisterResponse(BaseModel):
+class UserResponse(BaseModel):
+    """The body of both register and /auth/me."""
+
     user: UserOut
 
 
