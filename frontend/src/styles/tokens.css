@@ -1,0 +1,32 @@
+/*
+ * Design tokens from docs/design-system.md, light theme only.
+ *
+ * The values are provisional: they were chosen to pass the contrast targets (body text 4.5:1,
+ * UI boundaries and the focus ring 3:1, computed, not judged by eye) and are reviewed again with
+ * the dark theme in S4-5. Status and severity colors are added in the stories that use them, so
+ * that no color ships unchecked.
+ */
+
+/* Self-hosted fonts, so the page makes no third-party requests (docs/security.md). */
+@import '@fontsource/ibm-plex-sans/latin-400.css';
+@import '@fontsource/ibm-plex-sans/latin-500.css';
+@import '@fontsource/ibm-plex-sans/latin-600.css';
+@import '@fontsource/ibm-plex-mono/latin-400.css';
+
+:root {
+  --background: #f7f8fa;
+  --surface: #ffffff;
+  --surface-muted: #eef1f5;
+
+  --foreground: #131923;
+  --foreground-muted: #4b5565;
+
+  --border: #d9dee6;
+  --border-strong: #7b8798;
+
+  --accent: #0b6b6b;
+  --accent-foreground: #ffffff;
+  --accent-subtle: #e1f1f0;
+
+  --danger: #b3261e;
+}

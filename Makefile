@@ -1,4 +1,4 @@
-.PHONY: help install up down logs ps migrate test lint fmt typecheck check db-shell
+.PHONY: help install up down logs ps migrate test lint fmt typecheck check db-shell frontend-node frontend-install frontend-dev frontend-check
 
 PYTHON ?= python3.12
 VENV := backend/.venv
@@ -39,7 +39,21 @@ fmt: ## ruff format and autofix
 typecheck: ## mypy
 	cd backend && .venv/bin/mypy app
 
-check: lint typecheck test ## Lint, typecheck and test (must pass before finishing a task)
+check: lint typecheck test frontend-check ## Lint, typecheck and test, backend and frontend (must pass before finishing a task)
+
+# The frontend is built and tested on Node 22 (frontend/.nvmrc), the version CI uses.
+frontend-node:
+	@node -e 'process.exit(process.versions.node.split(".")[0] === "22" ? 0 : 1)' || \
+		(echo "The frontend needs Node 22 and this shell has $$(node --version). Run: cd frontend && nvm use" && exit 1)
+
+frontend-install: frontend-node ## Install frontend dependencies from the lock file (Node 22)
+	cd frontend && npm ci
+
+frontend-dev: frontend-node ## Start the frontend dev server on port 5173 (proxies /api to port 8000)
+	cd frontend && npm run dev
+
+frontend-check: frontend-node ## Frontend lint, format check, typecheck and tests
+	cd frontend && npm run lint && npm run format:check && npm run typecheck && npm test
 
 db-shell: ## Open psql in the db container
 	docker compose exec db sh -c 'psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"'

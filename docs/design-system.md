@@ -41,7 +41,7 @@ Reject a design or a pull request if any of these appear.
 
 Defined once in `src/styles/tokens.css` as CSS variables and mapped in the Tailwind theme. Components use semantic names only.
 
-Neutral scale (cool gray) with one accent (a deep teal) keeps the tool serious and avoids the default blue and purple look. Final values are chosen once during Sprint 3 and must meet the contrast targets below.
+Neutral scale (cool gray) with one accent (a deep teal) keeps the tool serious and avoids the default blue and purple look. The light-theme values below were set in S1-7 so that the first screens could be built, and are reviewed once more with the dark theme in S4-5. They must meet the contrast targets below.
 
 | Token | Use |
 |---|---|
@@ -51,6 +51,26 @@ Neutral scale (cool gray) with one accent (a deep teal) keeps the tool serious a
 | `accent`, `accent-foreground`, `accent-subtle` | Primary buttons, links, focus ring, selected state |
 | `severity-high`, `severity-medium`, `severity-low` | Finding severity (text, border and subtle background) |
 | `success`, `warning`, `danger`, `info` | Status messages and badges |
+
+Values in use (light theme, set in S1-7, provisional until S4-5). Only the tokens the screens use so far are defined; `severity-*`, `success`, `warning` and `info` are added, with their contrast checked, in the story that first needs them. `danger` is the one status color defined so far.
+
+| Token | Value | Checked against |
+|---|---|---|
+| `background` | `#f7f8fa` | `foreground` 16.6:1, `foreground-muted` 7.1:1, `accent` 5.9:1 |
+| `surface` | `#ffffff` | `foreground` 17.6:1, `foreground-muted` 7.5:1, `accent` 6.3:1, `danger` 6.5:1 |
+| `surface-muted` | `#eef1f5` | `foreground-muted` 6.65:1 |
+| `foreground` | `#131923` | text on all three surfaces |
+| `foreground-muted` | `#4b5565` | secondary text on all three surfaces |
+| `border` | `#d9dee6` | dividers (decorative) |
+| `border-strong` | `#7b8798` | input borders: 3.65:1 on `surface`, 3.43:1 on `background` (needs 3:1) |
+| `accent` | `#0b6b6b` | link text and focus ring 5.9:1 to 6.3:1; button label (`accent-foreground`) 6.3:1 |
+| `accent-foreground` | `#ffffff` | label on `accent` |
+| `accent-subtle` | `#e1f1f0` | `accent` text on it 5.4:1 |
+| `danger` | `#b3261e` | text on `surface` 6.54:1, on `background` 6.15:1 |
+
+The shadcn/ui components use their own color class names. `src/styles/index.css` maps them to our tokens, so read `bg-primary`, `text-primary` and `ring-ring` as `accent`; `bg-accent` as `accent-subtle` (shadcn uses "accent" for hover and selected backgrounds); `border-input` as `border-strong`; `bg-destructive` and `text-destructive` as `danger`; `text-muted-foreground` as `foreground-muted`. Generated components are changed only to follow this document (no shadows, the 2 px focus ring with a 2 px offset).
+
+Layout widths are theme sizes, not one-off values: `max-w-form` is 400 px and `max-w-content` is 1120 px.
 
 Contrast: body text at least 4.5:1, large text and UI boundaries at least 3:1, in light and dark themes. Check with a contrast tool; do not estimate by eye.
 

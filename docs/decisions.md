@@ -219,3 +219,41 @@ Consequences:
 - The database role that can only INSERT and SELECT on `audit_events`, the one-year retention purge, and any way to read the events are not built. The first belongs to the Sprint 4 deploy set-up, and a reader would be an admin dashboard, which is a non-goal.
 - `AuditEvent` stays in the auth module for now (ADR-014) and moves when the first non-auth event, `document.upload`, arrives in Sprint 2.
 Alternatives: storing the readable email on failed logins (useful for investigations, but it keeps personal data for a year and can hold a typed password), recording blocked attempts (an attacker-controlled write rate), writing the event in a separate transaction (a crash could leave the action done and unrecorded, or recorded and not done).
+
+## ADR-025: The frontend stack and the versions installed (2026-10-31)
+
+Context: S1-7 starts the frontend. `AGENTS.md` fixes the stack; this records what that means in versions, and the two places where the newest release could not be used.
+Decision: the versions below were read from the npm registry on 2026-10-31 and are locked in `frontend/package-lock.json`, which CI installs with `npm ci`.
+
+| Area | Packages (major.minor installed) |
+|---|---|
+| Runtime and build | Node 22 (`.nvmrc`, `engines ^22.22.2`), React 19.3, Vite 8.3 with `@vitejs/plugin-react` 6.1 |
+| Language and lint | TypeScript 6.0 (strict), ESLint 10.14 with `typescript-eslint` 8.72 and `eslint-plugin-react-hooks` 7.1, Prettier 3.9 |
+| Styling and UI | Tailwind CSS 4.3 with `@tailwindcss/vite`, shadcn/ui (CLI 4.23, style `new-york`, `radix-ui` 1.8), `lucide-react` 1.65, `@fontsource` IBM Plex Sans and Mono |
+| Data and routing | TanStack Query 5.105, `react-router` 8.5, Zustand 5.0 |
+| Forms | React Hook Form 7.91, `@hookform/resolvers` 6.0, Zod 4.6 |
+| Tests | Vitest 5.0, Testing Library (react 16.3, dom 10.4, jest-dom 7.0, user-event 14.6), jsdom 30 |
+
+- TypeScript is pinned to 6.0 (`~6.0.3`), not the 7.0 that the registry offers. `typescript-eslint` 8.72 supports TypeScript below 6.1, so 7.0 would break linting. Revisit when `typescript-eslint` supports 7; if Dependabot proposes the upgrade before then, it should not be merged.
+- The router is the `react-router` package, version 8. The separate `react-router-dom` package is the older 7 line. React Router 8 and jsdom 30 need Node 22.22 or newer, which sets the `engines` range.
+- Only the five shadcn components the first screens need are added (Button, Input, Label, Form, Skeleton). The generated files are changed only to follow `docs/design-system.md`.
+- Not added: a network-mocking library (tests stub `fetch` with a small helper, so tests stay close to the one place that calls it), and an accessibility lint plugin (the form tests check labels, error links and roles directly; revisit in S4-5).
+Consequences: more dependencies than the backend, so Dependabot weekly updates matter here; `npm audit` runs in CI as advisory and becomes blocking in Sprint 4. The production bundle is 528 kB (164 kB compressed), above Vite's 500 kB warning, which is acceptable now and is handled by route-level code splitting when more screens exist.
+Alternatives: Material UI (ADR-005), `react-router-dom` 7 (older line), TypeScript 7 now (breaks the linter), Jest instead of Vitest (a second build pipeline), `localStorage` persistence for the session (ADR-008 and `docs/security.md` rule it out).
+
+## ADR-026: How the frontend keeps the session (2026-10-31)
+
+Context: the backend hands out a 15-minute access token and a rotating refresh cookie, and treats a second use of an old refresh cookie as theft (ADR-022). The frontend has to keep the user signed in across reloads without ever making that happen by accident.
+Decision:
+- The access token lives only in a Zustand store in memory. Nothing is written to `localStorage`, `sessionStorage` or a script-readable cookie, a test checks this, and ESLint forbids those globals. A reload loses the token on purpose and the refresh cookie gets a new one.
+- The signed-in user is kept in the TanStack Query cache, seeded from the login and refresh responses, not in Zustand, because `AGENTS.md` says not to mirror server data there.
+- `src/lib/api.ts` is the only place that calls `fetch` (ESLint enforces it). It adds the bearer token, turns the error format from `docs/api.md` into an `ApiError`, validates success bodies with Zod, and on a `401 invalid_access_token` refreshes once and retries once. It talks to the session through a small "port" so it does not import from the auth feature.
+- Refreshing is single-flight per tab, and the refresh request also takes a Web Lock shared by all tabs of the browser. Reason: React's development mode runs effects twice, and two tabs reloading together do the same, and either case would send the same cookie twice at once, which the backend reads as theft and answers by ending the login. One shared request, and tabs taking turns so the second one sends the cookie the first one just received, remove that. Where the Web Locks API is missing, the per-tab protection still applies.
+- On start the app asks for a session. While it waits the guarded pages show a loading skeleton, and neither redirects, so a reload on a page keeps that page. No session is the normal case for a new visitor, so a failed restore shows no error.
+- Sign-out always ends the session on this device, even if the request to the server fails, and clears the cached data so the next person on the browser sees nothing of it.
+- Register is two requests, register then login, because the API returns no tokens from register. If the login after a successful register fails, the form says the account exists and asks the user to sign in.
+Consequences:
+- If the server cannot be reached at sign-out, the refresh cookie stays valid on the server and in the browser, so the next page load signs the user in again. The user sees them signed out and can retry, but it is a real gap, and it is not hidden.
+- A refresh that fails because of a network problem is treated as "no session", so a temporary outage on reload shows the login page. Signing in again fixes it.
+- A wrong `CORS_ORIGINS` makes every refresh fail with `origin_not_allowed`, which looks like "reload signs me out". The development origin is `http://localhost:5173`, which is the backend default.
+Alternatives: token in `localStorage` (readable by any script that runs on the page), refreshing on a timer (extra requests and the same race), one refresh per failed request without sharing (the race), a polling "is the other tab done" flag instead of a lock (can still race).

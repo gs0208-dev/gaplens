@@ -55,3 +55,29 @@ jobs:
         continue-on-error: true
         # It queries a remote database and has no timeout of its own.
         timeout-minutes: 5
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v7
+        with:
+          # The same Node as local development, so a problem cannot hide behind a version gap.
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      # npm ci installs exactly what package-lock.json says and fails if it disagrees.
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      # Advisory until the dependency set settles; make it blocking in Sprint 4.
+      - run: npm audit --audit-level=high
+        continue-on-error: true
+        timeout-minutes: 5

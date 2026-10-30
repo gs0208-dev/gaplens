@@ -36,7 +36,7 @@ See [docs/architecture.md](docs/architecture.md). Diagram of the ingestion and a
 
 ## Getting started
 
-Requires Docker, Python 3.12 and make.
+Requires Docker, Python 3.12, Node 22 and make.
 
 ```bash
 cp .env.example .env        # then edit POSTGRES_PASSWORD
@@ -51,6 +51,14 @@ For backend development:
 make install                # creates backend/.venv
 make migrate                # applies database migrations to the Compose database
 make check                  # lint, typecheck, tests (database tests need make up)
+```
+
+For frontend development (the backend must be running, and `JWT_SECRET` must be set in `.env`):
+
+```bash
+nvm use                     # in frontend/, picks Node 22 from .nvmrc
+make frontend-install       # installs from package-lock.json
+make frontend-dev           # http://localhost:5173, proxies /api to the backend
 ```
 
 ## Documentation

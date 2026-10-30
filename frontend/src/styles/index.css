@@ -1,0 +1,54 @@
+@import 'tailwindcss';
+@import './tokens.css';
+
+/*
+ * Maps the design-system tokens to the names the shadcn/ui components use, so components added
+ * later work without editing. Read the left side as the Tailwind class, the right side as the
+ * design-system token:
+ *   bg-primary, text-primary, ring-ring -> accent  (the one brand color)
+ *   bg-accent                           -> accent-subtle (shadcn uses "accent" for hover and selected)
+ *   border-input                        -> border-strong (field borders must reach 3:1)
+ *   bg-destructive, text-destructive    -> danger
+ */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-foreground: var(--foreground);
+
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--accent-foreground);
+  --color-secondary: var(--surface-muted);
+  --color-secondary-foreground: var(--foreground);
+  --color-muted: var(--surface-muted);
+  --color-muted-foreground: var(--foreground-muted);
+  --color-accent: var(--accent-subtle);
+  --color-accent-foreground: var(--foreground);
+  --color-destructive: var(--danger);
+
+  --color-border: var(--border);
+  --color-input: var(--border-strong);
+  --color-ring: var(--accent);
+
+  /* Layout widths from docs/design-system.md: 400 px forms, 1120 px content. */
+  --container-form: 25rem;
+  --container-content: 70rem;
+
+  --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    /* 14 px is the default UI size in the design system. */
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+}

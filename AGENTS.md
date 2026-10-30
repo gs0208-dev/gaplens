@@ -51,7 +51,10 @@ Run these from the repo root. Use them instead of inventing your own.
 | `make lint` | ruff check and format check |
 | `make fmt` | ruff format and autofix |
 | `make typecheck` | mypy |
-| `make check` | lint, typecheck and test; must pass before you finish any task |
+| `make frontend-install` | Install frontend dependencies from `package-lock.json` (needs Node 22, see `frontend/.nvmrc`; `nvm use` picks it) |
+| `make frontend-dev` | Start the Vite dev server on port 5173; it proxies `/api` to the backend on port 8000 |
+| `make frontend-check` | Frontend ESLint, Prettier check, TypeScript and Vitest |
+| `make check` | backend and frontend lint, typecheck and test; must pass before you finish any task |
 | `make eval` | Run the AI evals (added in Sprint 4; costs money, run on request) |
 
 ## Repository layout
