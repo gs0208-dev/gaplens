@@ -149,7 +149,8 @@ Details and the full checklist are in `docs/design-system.md`. The short version
 ## Git
 
 - Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`, `chore:`, `refactor:`). One logical change per commit. Imperative subject under 72 characters.
-- Branch per story: `s1/auth-login`. Merge to `main` only when `make check` passes.
+- Use a branch and a pull request for any change to how the app behaves or is built: a sprint story (`s1/auth-login`), a bug fix, anything touching a table, an endpoint, a dependency or a security rule, and changes to CI, Docker or the Makefile. Merge to `main` only when `make check` passes and CI is green.
+- Low-risk changes may be committed straight to `main`: typos and wording in docs, ticking checklist boxes, learning-log entries, small README fixes. `make check` must still pass first. A docs change that alters what the code is supposed to do (`docs/api.md`, `docs/security.md`, `docs/database.md`, `docs/ai-engineering.md`) is not low-risk and gets a branch.
 - Do not rewrite published history. Do not force-push.
 
 ## Never do
