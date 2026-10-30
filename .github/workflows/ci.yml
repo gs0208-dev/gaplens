@@ -15,6 +15,8 @@ concurrency:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    # A normal run takes about a minute. Without a limit a stuck job holds a runner for six hours.
+    timeout-minutes: 10
     env:
       DATABASE_URL: postgresql+asyncpg://gaplens:ci-only-not-a-secret@localhost:5432/gaplens
       # Tests replace this with a random value; it only has to exist for the app to start.
@@ -51,3 +53,5 @@ jobs:
       # Advisory until the dependency set settles; make it blocking in Sprint 4.
       - run: pip-audit
         continue-on-error: true
+        # It queries a remote database and has no timeout of its own.
+        timeout-minutes: 5
