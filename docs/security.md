@@ -101,6 +101,7 @@ Limits are in-memory (slowapi) while there is one backend instance. With more th
 
 - Application logs: request id, method, path (without query strings), status, duration, user id (UUID), event names. Never passwords, tokens, cookies, document text, prompts, model output, or full email addresses.
 - `audit_events` records: `auth.register`, `auth.login`, `auth.login_failed`, `auth.logout`, `auth.refresh_reuse_detected`, `document.upload`, `document.delete`, `analysis.start`, `account.delete`. Append-only; the application database role has no `UPDATE` or `DELETE` on it.
+- An audit row never contains a password, a token, a cookie or a readable email address. A failed login stores a SHA-256 of the submitted email and a `reason` (`unknown_email`, `wrong_password` or `account_disabled`); the reason is never returned to the client. An event is written in the same transaction as the action it records. Requests blocked by a rate limit are not recorded, so an attacker cannot grow the table faster than the limits allow. A logout is recorded only if it ended a login, and a token reuse is recorded against the login (`refresh_token_family`) it revoked.
 
 ## Containers and infrastructure
 

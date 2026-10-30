@@ -1,16 +1,23 @@
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.auth.models import RefreshToken, User
+from app.modules.auth.models import AuditEvent, RefreshToken, User
 
 
 @dataclass(frozen=True)
 class ClaimedToken:
     id: uuid.UUID
+    user_id: uuid.UUID
+    family_id: uuid.UUID
+
+
+@dataclass(frozen=True)
+class RevokedToken:
     user_id: uuid.UUID
     family_id: uuid.UUID
 
@@ -83,14 +90,15 @@ async def claim_refresh_token(
     return ClaimedToken(id=row.id, user_id=row.user_id, family_id=row.family_id) if row else None
 
 
-async def find_revoked_token_family(session: AsyncSession, token_hash: str) -> uuid.UUID | None:
-    """The family of a token that exists and was already revoked, otherwise None."""
+async def find_revoked_token(session: AsyncSession, token_hash: str) -> RevokedToken | None:
+    """The owner and family of a token that exists and was already revoked, otherwise None."""
     result = await session.execute(
-        select(RefreshToken.family_id).where(
+        select(RefreshToken.user_id, RefreshToken.family_id).where(
             RefreshToken.token_hash == token_hash, RefreshToken.revoked_at.is_not(None)
         )
     )
-    return result.scalar_one_or_none()
+    row = result.one_or_none()
+    return RevokedToken(user_id=row.user_id, family_id=row.family_id) if row else None
 
 
 async def revoke_family(session: AsyncSession, family_id: uuid.UUID, now: datetime) -> None:
@@ -103,23 +111,28 @@ async def revoke_family(session: AsyncSession, family_id: uuid.UUID, now: dateti
     )
 
 
-async def revoke_family_of_token(session: AsyncSession, token_hash: str, now: datetime) -> None:
+async def revoke_family_of_token(
+    session: AsyncSession, token_hash: str, now: datetime
+) -> uuid.UUID | None:
     """Revoke every still-active token of the login that the given token belongs to.
 
-    It works even if the given token is an old, already-rotated one, because it looks the family
-    up first. An unknown token matches nothing. Served by refresh_tokens_token_hash_uidx for the
+    Returns the owner's user id, or None if nothing was active to revoke (an unknown token, or
+    a login that had already ended). It works even if the given token is an old, already-rotated
+    one, because it looks the family up first. Served by refresh_tokens_token_hash_uidx for the
     lookup and refresh_tokens_family_id_idx for the update.
     """
     family_of_token = select(RefreshToken.family_id).where(RefreshToken.token_hash == token_hash)
-    await session.execute(
+    result = await session.execute(
         update(RefreshToken)
         .where(
             RefreshToken.family_id == family_of_token.scalar_subquery(),
             RefreshToken.revoked_at.is_(None),
         )
         .values(revoked_at=now)
+        .returning(RefreshToken.user_id)
         .execution_options(synchronize_session=False)
     )
+    return result.scalars().first()
 
 
 async def link_replacement(
@@ -130,6 +143,30 @@ async def link_replacement(
         .where(RefreshToken.id == old_token_id)
         .values(replaced_by=new_token_id)
         .execution_options(synchronize_session=False)
+    )
+
+
+async def add_audit_event(
+    session: AsyncSession,
+    *,
+    action: str,
+    actor_id: uuid.UUID | None,
+    resource_type: str | None,
+    resource_id: uuid.UUID | None,
+    ip: str | None,
+    request_id: str | None,
+    event_metadata: dict[str, Any],
+) -> None:
+    await session.execute(
+        insert(AuditEvent).values(
+            action=action,
+            actor_id=actor_id,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            ip=ip,
+            request_id=request_id,
+            event_metadata=event_metadata,
+        )
     )
 
 

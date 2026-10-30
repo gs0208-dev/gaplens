@@ -17,7 +17,7 @@ from app.core.security import (
     hash_refresh_token,
     verify_password,
 )
-from app.modules.auth import repository
+from app.modules.auth import audit, repository
 from app.modules.auth.errors import (
     EmailAlreadyRegistered,
     InvalidCredentials,
@@ -46,7 +46,18 @@ def _violates_email_index(error: IntegrityError) -> bool:
     return getattr(cause, "constraint_name", None) == EMAIL_UNIQUE_INDEX
 
 
-async def register_user(session: AsyncSession, email: str, password: str) -> User:
+def _login_failure_reason(user: User | None, password_matches: bool) -> str:
+    """Why a login failed. It goes in the audit row only, never in a response."""
+    if user is None:
+        return "unknown_email"
+    if not password_matches:
+        return "wrong_password"
+    return "account_disabled"
+
+
+async def register_user(
+    session: AsyncSession, email: str, password: str, *, ip: str | None
+) -> User:
     # Hashing is CPU heavy, so it runs in a worker thread and does not block other requests.
     password_hash = await run_in_threadpool(hash_password, password)
     try:
@@ -57,6 +68,14 @@ async def register_user(session: AsyncSession, email: str, password: str) -> Use
         if not _violates_email_index(error):
             raise
         raise EmailAlreadyRegistered from error
+    await audit.record_audit_event(
+        session,
+        action=audit.REGISTER,
+        actor_id=user.id,
+        resource_type="user",
+        resource_id=user.id,
+        ip=ip,
+    )
     await session.commit()
     return user
 
@@ -79,6 +98,20 @@ async def login(
 
     if user is None or not password_matches or not user.is_active:
         email_failures.record_failure(email)
+        # Every kind of failure does the same work here, one insert and one commit, so the
+        # time it takes still does not reveal which kind it was. The commit must come before
+        # the error, because raising it rolls the transaction back.
+        await audit.record_audit_event(
+            session,
+            action=audit.LOGIN_FAILED,
+            actor_id=user.id if user is not None else None,
+            ip=ip,
+            metadata={
+                "reason": _login_failure_reason(user, password_matches),
+                "email_sha256": audit.email_digest(email),
+            },
+        )
+        await session.commit()
         raise InvalidCredentials
 
     now = datetime.now(UTC)
@@ -87,6 +120,7 @@ async def login(
         session, user, family_id=uuid.uuid4(), replaces=None, user_agent=user_agent, ip=ip, now=now
     )
     await repository.mark_login(session, user.id, now)
+    await audit.record_audit_event(session, action=audit.LOGIN, actor_id=user.id, ip=ip)
     await session.commit()
     return result
 
@@ -109,9 +143,17 @@ async def refresh_session(
         # Nothing usable. A token that exists but was already revoked is being presented a
         # second time, which means a copy of it exists somewhere it should not. Revoke the
         # whole login. The commit must come before the error, because the error rolls back.
-        family_id = await repository.find_revoked_token_family(session, token_hash)
-        if family_id is not None:
-            await repository.revoke_family(session, family_id, now)
+        reused = await repository.find_revoked_token(session, token_hash)
+        if reused is not None:
+            await repository.revoke_family(session, reused.family_id, now)
+            await audit.record_audit_event(
+                session,
+                action=audit.REFRESH_REUSE_DETECTED,
+                actor_id=reused.user_id,
+                resource_type="refresh_token_family",
+                resource_id=reused.family_id,
+                ip=ip,
+            )
             await session.commit()
         raise InvalidRefreshToken
 
@@ -134,13 +176,16 @@ async def refresh_session(
     return result
 
 
-async def logout(session: AsyncSession, refresh_token: str | None) -> None:
+async def logout(session: AsyncSession, refresh_token: str | None, *, ip: str | None) -> None:
     """End the login that the refresh token belongs to. Quiet if there is nothing to end."""
     if not refresh_token:
         return
-    await repository.revoke_family_of_token(
+    user_id = await repository.revoke_family_of_token(
         session, hash_refresh_token(refresh_token), datetime.now(UTC)
     )
+    # Only a logout that really ended a login is recorded, so a repeated one is not.
+    if user_id is not None:
+        await audit.record_audit_event(session, action=audit.LOGOUT, actor_id=user_id, ip=ip)
     await session.commit()
 
 

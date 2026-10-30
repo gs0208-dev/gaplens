@@ -13,6 +13,7 @@ from app.core.config import get_settings
 from tests.api.helpers import (
     ALLOWED_ORIGIN,
     Account,
+    expire_all_tokens,
     log_in,
     parse_set_cookie,
     refresh,
@@ -27,13 +28,6 @@ REQUIRED_COOKIE_ATTRIBUTES = {
     "path=/api/v1/auth",
     f"max-age={7 * 24 * 60 * 60}",
 }
-
-
-async def expire_all_tokens(engine: AsyncEngine) -> None:
-    async with engine.begin() as connection:
-        await connection.execute(
-            text("UPDATE refresh_tokens SET expires_at = now() - interval '1 day'")
-        )
 
 
 async def test_refresh_returns_a_new_token_pair(api_client: AsyncClient, account: Account) -> None:

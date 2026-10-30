@@ -108,6 +108,34 @@ def without_request_id(response: Response) -> tuple[int, dict[str, Any]]:
     return response.status_code, body
 
 
+async def expire_all_tokens(engine: AsyncEngine) -> None:
+    async with engine.begin() as connection:
+        await connection.execute(
+            text("UPDATE refresh_tokens SET expires_at = now() - interval '1 day'")
+        )
+
+
+async def audit_rows(engine: AsyncEngine, action: str | None = None) -> list[Any]:
+    """The audit rows in the order they were written, optionally only one action."""
+    async with engine.connect() as connection:
+        result = await connection.execute(
+            text(
+                "SELECT actor_id, action, resource_type, resource_id, ip, request_id, metadata "
+                "FROM audit_events WHERE (CAST(:action AS text) IS NULL OR action = :action) "
+                "ORDER BY id"
+            ),
+            {"action": action},
+        )
+        return list(result)
+
+
+async def audit_dump(engine: AsyncEngine) -> str:
+    """Every column of every audit row as one string, for checking that no secret is in it."""
+    async with engine.connect() as connection:
+        result = await connection.execute(text("SELECT row_to_json(a)::text FROM audit_events a"))
+        return "\n".join(row[0] for row in result)
+
+
 async def stored_refresh_tokens(engine: AsyncEngine) -> list[Any]:
     async with engine.connect() as connection:
         result = await connection.execute(
