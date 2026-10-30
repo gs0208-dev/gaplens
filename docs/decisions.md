@@ -172,3 +172,20 @@ Decision:
 - Not built yet: refresh and rotation (S1-4), access token verification (S1-5), audit events (S1-6). Rehash-on-login when the hashing parameters change is not built, because they have never changed.
 Consequences: the login endpoint's response time is dominated by one argon2 verification, on purpose. The rate limits can lock a real user out for a short time if someone else keeps guessing their email.
 Alternatives: different errors for each failure (lets attackers list accounts), counting all attempts toward the email limit (locks out real users), returning the refresh token in the body (readable by scripts), storing the refresh token unhashed (a database leak would then hand out sessions).
+
+## ADR-022: How refresh rotation works (2026-10-30)
+
+Context: S1-4 keeps users signed in by swapping the refresh cookie for a new pair, and has to notice when a copied refresh token is used. It is the part of authentication most likely to be asked about in an interview.
+Decision:
+- Rotation: each refresh revokes the presented token and issues a new one in the same family (the family is one login). The old row's `replaced_by` points at the new row, so the chain is traceable.
+- The old token is claimed with one atomic `UPDATE ... WHERE token_hash = ? AND revoked_at IS NULL AND expires_at > now RETURNING ...`. When two requests present the same token at once, the database lets only one change the row. A "read the token, then revoke it" sequence would let both succeed. A test sends two at once and expects exactly one 200.
+- If the claim finds nothing, a second lookup separates the cases. A token that exists and is already revoked is being used a second time, so every token of its family is revoked. An unknown or merely expired token only gets the 401. The family revocation is committed before the error is raised, because raising rolls the transaction back.
+- Every failure (missing, unknown, expired, reused, disabled user) returns the same `401 invalid_refresh_token` and clears the cookie, so the response never says which one it was. A disabled user also loses the whole family.
+- The `Origin` check is a route dependency, so it runs before any token is looked at. A request from a wrong origin gets `403 origin_not_allowed` and cannot use up a token. A missing `Origin` is rejected, because browsers always send it on a POST, so only a script lacks it. The allowed list is the existing `CORS_ORIGINS` setting, compared exactly.
+- Reuse detection is strict, as in `docs/security.md`. There is no grace window.
+- The `auth.refresh_reuse_detected` audit event is not written yet. The audit helper arrives in S1-6, which now lists this event.
+Consequences:
+- Two browser tabs that refresh in the same instant look like theft and sign the user out. The frontend (S1-7) can reduce this by sending only one refresh at a time, and the rule can be revisited with real use. A short grace window would remove the problem but would also stop detecting a thief who uses a stolen token inside it.
+- Each rotation gives the new token a fresh 7 days, so a user who keeps using the app stays signed in indefinitely. A fixed maximum age for one login would need a new column, so it is not built.
+- Both new hot-path queries use existing indexes. On a throwaway table of 50,000 rows, `EXPLAIN (ANALYZE, BUFFERS)` showed an index scan on `refresh_tokens_token_hash_uidx` for the claim (0.14 ms) and the reuse lookup (0.02 ms), and a bitmap scan on `refresh_tokens_family_id_idx` for the family revoke (0.11 ms).
+Alternatives: read then update in two steps (race), a grace window for recent rotations (weaker theft detection), different errors per failure (leaks which case happened), checking the origin inside the service (runs after the token has been touched).

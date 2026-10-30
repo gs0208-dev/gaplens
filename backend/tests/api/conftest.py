@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.db.session import get_session
 from app.main import app
+from tests.api.helpers import SAMPLE_PHRASE, Account, insert_user
 
 
 @pytest.fixture
@@ -21,3 +22,8 @@ async def api_client(migrated_engine: AsyncEngine) -> AsyncIterator[AsyncClient]
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as http_client:
         yield http_client
+
+
+@pytest.fixture
+async def account(migrated_engine: AsyncEngine) -> Account:
+    return await insert_user(migrated_engine, "ana@example.com", SAMPLE_PHRASE)
