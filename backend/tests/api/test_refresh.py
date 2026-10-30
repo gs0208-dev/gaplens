@@ -2,22 +2,22 @@ import asyncio
 import hashlib
 import logging
 from datetime import UTC, datetime, timedelta
-from typing import Any
 
 import jwt
 import pytest
-from httpx import AsyncClient, Response
+from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.core.config import get_settings
 from tests.api.helpers import (
     ALLOWED_ORIGIN,
-    LOGIN_URL,
-    REFRESH_URL,
     Account,
-    credentials,
+    log_in,
     parse_set_cookie,
+    refresh,
+    token_rows,
+    without_request_id,
 )
 
 REQUIRED_COOKIE_ATTRIBUTES = {
@@ -29,47 +29,11 @@ REQUIRED_COOKIE_ATTRIBUTES = {
 }
 
 
-async def log_in(client: AsyncClient, account: Account) -> str:
-    """Log in and return the refresh token from the cookie."""
-    response = await client.post(LOGIN_URL, json=credentials(account.email, account.phrase))
-    _, token, _ = parse_set_cookie(response.headers["set-cookie"])
-    return token
-
-
-async def refresh(
-    client: AsyncClient, token: str | None, *, origin: str | None = ALLOWED_ORIGIN
-) -> Response:
-    """Send the refresh cookie by hand, because httpx will not send a Secure cookie over http."""
-    headers: dict[str, str] = {}
-    if token is not None:
-        headers["Cookie"] = f"refresh_token={token}"
-    if origin is not None:
-        headers["Origin"] = origin
-    return await client.post(REFRESH_URL, headers=headers)
-
-
-async def token_rows(engine: AsyncEngine) -> list[Any]:
-    async with engine.connect() as connection:
-        result = await connection.execute(
-            text(
-                "SELECT id, token_hash, family_id, revoked_at, replaced_by, expires_at "
-                "FROM refresh_tokens ORDER BY created_at"
-            )
-        )
-        return list(result)
-
-
 async def expire_all_tokens(engine: AsyncEngine) -> None:
     async with engine.begin() as connection:
         await connection.execute(
             text("UPDATE refresh_tokens SET expires_at = now() - interval '1 day'")
         )
-
-
-def without_request_id(response: Response) -> tuple[int, dict[str, Any]]:
-    body = response.json()
-    body.pop("request_id")
-    return response.status_code, body
 
 
 async def test_refresh_returns_a_new_token_pair(api_client: AsyncClient, account: Account) -> None:

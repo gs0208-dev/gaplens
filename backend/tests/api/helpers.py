@@ -12,6 +12,8 @@ from app.main import app
 REGISTER_URL = "/api/v1/auth/register"
 LOGIN_URL = "/api/v1/auth/login"
 REFRESH_URL = "/api/v1/auth/refresh"
+LOGOUT_URL = "/api/v1/auth/logout"
+ME_URL = "/api/v1/auth/me"
 SAMPLE_PHRASE = "correct horse battery"
 WRONG_PHRASE = "wrong horse battery"
 # An origin the app trusts, so requests that need the Origin header can send it.
@@ -53,6 +55,57 @@ def parse_set_cookie(header: str) -> tuple[str, str, set[str]]:
     name_and_value, *attributes = [part.strip() for part in header.split(";")]
     name, value = name_and_value.split("=", 1)
     return name, value, {attribute.lower() for attribute in attributes}
+
+
+async def log_in(client: AsyncClient, account: Account) -> str:
+    """Log in and return the refresh token from the cookie."""
+    response = await client.post(LOGIN_URL, json=credentials(account.email, account.phrase))
+    _, token, _ = parse_set_cookie(response.headers["set-cookie"])
+    return token
+
+
+async def log_in_for_access_token(client: AsyncClient, account: Account) -> str:
+    response = await client.post(LOGIN_URL, json=credentials(account.email, account.phrase))
+    return str(response.json()["access_token"])
+
+
+def cookie_headers(token: str | None, origin: str | None) -> dict[str, str]:
+    """Send the refresh cookie by hand, because httpx will not send a Secure cookie over http."""
+    headers: dict[str, str] = {}
+    if token is not None:
+        headers["Cookie"] = f"refresh_token={token}"
+    if origin is not None:
+        headers["Origin"] = origin
+    return headers
+
+
+async def refresh(
+    client: AsyncClient, token: str | None, *, origin: str | None = ALLOWED_ORIGIN
+) -> Response:
+    return await client.post(REFRESH_URL, headers=cookie_headers(token, origin))
+
+
+async def logout(
+    client: AsyncClient, token: str | None, *, origin: str | None = ALLOWED_ORIGIN
+) -> Response:
+    return await client.post(LOGOUT_URL, headers=cookie_headers(token, origin))
+
+
+async def token_rows(engine: AsyncEngine) -> list[Any]:
+    async with engine.connect() as connection:
+        result = await connection.execute(
+            text(
+                "SELECT id, token_hash, family_id, revoked_at, replaced_by, expires_at "
+                "FROM refresh_tokens ORDER BY created_at"
+            )
+        )
+        return list(result)
+
+
+def without_request_id(response: Response) -> tuple[int, dict[str, Any]]:
+    body = response.json()
+    body.pop("request_id")
+    return response.status_code, body
 
 
 async def stored_refresh_tokens(engine: AsyncEngine) -> list[Any]:
