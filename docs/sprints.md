@@ -7,7 +7,7 @@ Agile plan for one developer working with AI coding agents. Five sprints of abou
 - Board: GitHub Projects with columns Backlog, Sprint, Doing, Done. One card per story. At most two cards in Doing.
 - Daily (5 minutes, written on the card or in `docs/learning-log.md`): done yesterday, doing today, blocked.
 - Story format: "As a (user), I can (action) so that (outcome)." Each story has acceptance criteria written as checkable statements.
-- Branch per story (`s1/auth-login`), merge to `main` when `make check` passes and the acceptance criteria are verified.
+- Branch per story (`s1/auth-login`), merge to `main` when `make check` passes, CI is green and the acceptance criteria are verified. Low-risk edits such as typos, checklist ticks and learning-log entries can go straight to `main`; the exact rule is in the Git section of `AGENTS.md`.
 - Sprint review: demo the sprint goal end to end, on a fresh clone if possible.
 - Sprint retro: one line each for keep, stop, change, appended to `docs/learning-log.md`.
 - Explain-back (15 minutes, every sprint): ask the agent to quiz you on the sprint's interview-core code (see `AGENTS.md`). Write your three-line summary in the learning log. A sprint is not done until you can answer without looking.
