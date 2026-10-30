@@ -54,7 +54,7 @@ Goal: a user can register, sign in, stay signed in across reloads, and sign out,
 | S1-3 Login and tokens | Correct credentials return an access token and set the refresh cookie with the required attributes; wrong password and unknown email give the same response; login is rate limited |
 | S1-4 Refresh rotation | Refresh issues a new pair and revokes the old token; reuse of a revoked token revokes the family; `Origin` check enforced |
 | S1-5 Current user and logout | `/auth/me` works with a valid token and fails otherwise; logout revokes and clears the cookie |
-| S1-6 Ownership helper and audit | A reusable current-user dependency; audit events written for register, login, failed login, logout |
+| S1-6 Ownership helper and audit | A reusable current-user dependency; audit events written for register, login, failed login, logout and refresh token reuse (`auth.refresh_reuse_detected`) |
 | S1-7 Frontend scaffold and auth screens | Vite, TypeScript strict, Tailwind and shadcn set up; sign in and register screens follow `docs/design-system.md`; access token held in memory; session restored through refresh on reload; `/api` proxy configured |
 | S1-8 Dependency locks and secret scanning | Lock files committed and used in CI; gitleaks in CI and pre-commit |
 

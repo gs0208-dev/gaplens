@@ -1,4 +1,5 @@
 from app.core.errors import DomainError
+from app.modules.auth.cookies import expired_refresh_cookie_header
 
 
 class EmailAlreadyRegistered(DomainError):
@@ -15,3 +16,15 @@ class InvalidCredentials(DomainError):
     code = "invalid_credentials"
     title = "Invalid credentials"
     detail = "The email or password is incorrect."
+
+
+class InvalidRefreshToken(DomainError):
+    # One error for a missing, unknown, expired and reused token, so the response never says
+    # which it was. The cookie is cleared so the browser stops sending a dead token.
+    status_code = 401
+    code = "invalid_refresh_token"
+    title = "Session no longer valid"
+    detail = "Your session is no longer valid. Sign in again."
+
+    def response_headers(self) -> dict[str, str]:
+        return {"Set-Cookie": expired_refresh_cookie_header()}

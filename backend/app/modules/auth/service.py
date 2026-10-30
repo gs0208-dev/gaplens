@@ -18,14 +18,20 @@ from app.core.security import (
     verify_password,
 )
 from app.modules.auth import repository
-from app.modules.auth.errors import EmailAlreadyRegistered, InvalidCredentials
+from app.modules.auth.errors import (
+    EmailAlreadyRegistered,
+    InvalidCredentials,
+    InvalidRefreshToken,
+)
 from app.modules.auth.models import User
 
 EMAIL_UNIQUE_INDEX = "users_email_lower_uidx"
 
 
 @dataclass(frozen=True)
-class LoginResult:
+class SessionResult:
+    """What login and refresh both hand back: a new access token and a new refresh token."""
+
     user: User
     access_token: str
     access_token_expires_in: int
@@ -62,7 +68,7 @@ async def login(
     *,
     user_agent: str | None,
     ip: str | None,
-) -> LoginResult:
+) -> SessionResult:
     if email_failures.is_blocked(email):
         raise RateLimited(retry_after=email_failures.retry_after(email))
 
@@ -75,24 +81,85 @@ async def login(
         email_failures.record_failure(email)
         raise InvalidCredentials
 
-    settings = get_settings()
     now = datetime.now(UTC)
+    # A new family per login. Every token that refresh rotation hands out stays in it.
+    result = await _issue_session(
+        session, user, family_id=uuid.uuid4(), replaces=None, user_agent=user_agent, ip=ip, now=now
+    )
+    await repository.mark_login(session, user.id, now)
+    await session.commit()
+    return result
+
+
+async def refresh_session(
+    session: AsyncSession,
+    refresh_token: str | None,
+    *,
+    user_agent: str | None,
+    ip: str | None,
+) -> SessionResult:
+    if not refresh_token:
+        raise InvalidRefreshToken
+
+    now = datetime.now(UTC)
+    token_hash = hash_refresh_token(refresh_token)
+    claimed = await repository.claim_refresh_token(session, token_hash, now)
+
+    if claimed is None:
+        # Nothing usable. A token that exists but was already revoked is being presented a
+        # second time, which means a copy of it exists somewhere it should not. Revoke the
+        # whole login. The commit must come before the error, because the error rolls back.
+        family_id = await repository.find_revoked_token_family(session, token_hash)
+        if family_id is not None:
+            await repository.revoke_family(session, family_id, now)
+            await session.commit()
+        raise InvalidRefreshToken
+
+    user = await repository.get_user_by_id(session, claimed.user_id)
+    if user is None or not user.is_active:
+        await repository.revoke_family(session, claimed.family_id, now)
+        await session.commit()
+        raise InvalidRefreshToken
+
+    result = await _issue_session(
+        session,
+        user,
+        family_id=claimed.family_id,
+        replaces=claimed.id,
+        user_agent=user_agent,
+        ip=ip,
+        now=now,
+    )
+    await session.commit()
+    return result
+
+
+async def _issue_session(
+    session: AsyncSession,
+    user: User,
+    *,
+    family_id: uuid.UUID,
+    replaces: uuid.UUID | None,
+    user_agent: str | None,
+    ip: str | None,
+    now: datetime,
+) -> SessionResult:
+    """Create a refresh token in the given family and an access token. The caller commits."""
+    settings = get_settings()
     refresh_token = generate_refresh_token()
     refresh_token_max_age = settings.refresh_token_days * 24 * 60 * 60
-    await repository.create_refresh_token(
+    new_token_id = await repository.create_refresh_token(
         session,
         user_id=user.id,
-        # A new family per login. Refresh rotation (S1-4) keeps every token of one login in it.
-        family_id=uuid.uuid4(),
+        family_id=family_id,
         token_hash=hash_refresh_token(refresh_token),
         expires_at=now + timedelta(seconds=refresh_token_max_age),
         user_agent=user_agent,
         ip=ip,
     )
-    await repository.mark_login(session, user.id, now)
-    await session.commit()
-
-    return LoginResult(
+    if replaces is not None:
+        await repository.link_replacement(session, replaces, new_token_id)
+    return SessionResult(
         user=user,
         access_token=create_access_token(user.id, user.role),
         access_token_expires_in=settings.access_token_minutes * 60,

@@ -46,7 +46,9 @@ class RegisterResponse(BaseModel):
     user: UserOut
 
 
-class LoginResponse(BaseModel):
+class TokenResponse(BaseModel):
+    """The body of both login and refresh."""
+
     access_token: str
     expires_in: int
     user: UserOut

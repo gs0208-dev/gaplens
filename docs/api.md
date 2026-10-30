@@ -29,9 +29,9 @@ Every error response uses this shape (modeled on RFC 9457 problem details):
 
 `code` is a stable machine-readable value. `detail` is safe for display. Validation errors (422) add `errors: [{ "field": "email", "message": "..." }]`. Stack traces and internal messages never appear.
 
-Error codes in use: `validation_error` (422), `email_already_registered` (409), `invalid_credentials` (401), `rate_limited` (429), `internal_error` (500). Add a code to this list in the same commit as the code that returns it.
+Error codes in use: `validation_error` (422), `email_already_registered` (409), `invalid_credentials` (401), `invalid_refresh_token` (401), `origin_not_allowed` (403), `rate_limited` (429), `internal_error` (500). Add a code to this list in the same commit as the code that returns it.
 
-Status codes: 400 malformed input, 401 missing or invalid token, 404 not found or not yours, 409 conflict (duplicate upload, analysis already running, email in use), 413 file too large, 415 unsupported file type, 422 validation, 429 rate limit, 500 unexpected, 503 dependency down.
+Status codes: 400 malformed input, 401 missing or invalid token, 403 request from an origin that is not allowed, 404 not found or not yours, 409 conflict (duplicate upload, analysis already running, email in use), 413 file too large, 415 unsupported file type, 422 validation, 429 rate limit, 500 unexpected, 503 dependency down.
 
 ## Operations (no auth)
 
@@ -53,6 +53,8 @@ Status codes: 400 malformed input, 401 missing or invalid token, 404 not found o
 Register: the email is trimmed and lowercased, at most 254 characters. The password is 12 to 128 characters and is never trimmed or truncated. A duplicate email (compared ignoring case) is `409 email_already_registered`. Unknown fields are `422`.
 
 Login: the email is trimmed and lowercased; the password is 1 to 128 characters. A wrong password, an unknown email and a disabled account all return the same `401 invalid_credentials`. No cookie is set on failure. `expires_in` is the access token lifetime in seconds (900). The refresh token is only ever in the cookie, never in the body.
+
+Refresh: the request must carry an `Origin` header that exactly matches an entry in `CORS_ORIGINS`, otherwise `403 origin_not_allowed`, and the refresh token is not touched. The old refresh token is revoked and a new one in the same login (family) is set in the cookie. A missing, unknown, expired or already-used token all return the same `401 invalid_refresh_token` and clear the cookie. Presenting an already-used token also revokes every token of that login. A disabled account gets the same `401` and loses the login.
 
 Rate limits: login is 5 requests per minute per IP, and an email address is blocked for up to 15 minutes after 5 failed logins, from any IP. Register is 5 per hour per IP. A limited request gets `429 rate_limited` with a `Retry-After` header in seconds. For the IP limits it is the window length, an upper bound on the wait.
 

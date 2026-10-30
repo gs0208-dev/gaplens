@@ -15,3 +15,19 @@ def set_refresh_cookie(response: Response, token: str, max_age_seconds: int) -> 
         secure=True,  # HTTPS only (browsers also allow it on localhost)
         samesite="strict",  # never sent on cross-site requests
     )
+
+
+def expired_refresh_cookie_header() -> str:
+    """The Set-Cookie value that makes a browser delete the refresh cookie.
+
+    A browser only deletes a cookie when the name, path and attributes match the one it holds.
+    """
+    response = Response()
+    response.delete_cookie(
+        key=REFRESH_COOKIE_NAME,
+        path=REFRESH_COOKIE_PATH,
+        httponly=True,
+        secure=True,
+        samesite="strict",
+    )
+    return response.headers["set-cookie"]
