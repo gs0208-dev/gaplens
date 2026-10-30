@@ -94,7 +94,8 @@ Limits are in-memory (slowapi) while there is one backend instance. With more th
 
 - Secrets only in environment variables. Local `.env` is gitignored. Production values are set in the host dashboards.
 - Generate the JWT secret with `openssl rand -hex 32`. Rotate by deploying a new secret; this logs everyone out, which is acceptable.
-- Add a secret scanner (gitleaks) as a pre-commit hook and CI step in Sprint 1, using its current release.
+- Secret scanning: gitleaks runs as a pre-commit hook (`make hooks` installs it) and as a CI job over the full git history, with a pinned and checksummed release (ADR-028). The CI log is redacted. If a secret is ever committed, rotate it first; deleting the commit does not make it safe again.
+- Dependencies: the backend installs from hashed lock files (ADR-027) and the frontend from `package-lock.json` with `npm ci`. CI fails if the backend lock is out of date.
 - The LLM API key is used only inside `app/ai/client.py`.
 
 ## Logging and audit

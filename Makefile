@@ -1,16 +1,28 @@
-.PHONY: help install up down logs ps migrate test lint fmt typecheck check db-shell frontend-node frontend-install frontend-dev frontend-check
+.PHONY: help install lock hooks up down logs ps migrate test lint fmt typecheck check db-shell frontend-node frontend-install frontend-dev frontend-check
 
 PYTHON ?= python3.12
 VENV := backend/.venv
 BIN  := $(VENV)/bin
+# CI has no venv; it runs `make lock PIP_COMPILE=pip-compile`.
+PIP_COMPILE ?= $(abspath $(BIN))/pip-compile
 
 help: ## List commands
 	@grep -E "^[a-zA-Z_-]+:.*## " $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "%-12s %s\n", $$1, $$2}'
 
-install: ## Create backend venv and install dev dependencies
+install: ## Create backend venv and install dev dependencies from the lock file
 	$(PYTHON) -m venv $(VENV)
 	$(BIN)/python -m pip install --upgrade pip
-	$(BIN)/python -m pip install -e "backend[dev]"
+	$(BIN)/python -m pip install --require-hashes -r backend/requirements-dev.txt
+	$(BIN)/python -m pip install --no-deps --no-build-isolation -e backend
+
+# Reads backend/pyproject.toml and keeps the versions already pinned. To upgrade a package, run
+# `cd backend && .venv/bin/pip-compile --upgrade-package <name> ...` with the same arguments.
+lock: ## Regenerate the backend lock files from pyproject.toml
+	cd backend && $(PIP_COMPILE) --quiet --generate-hashes --allow-unsafe --strip-extras -o requirements.txt pyproject.toml
+	cd backend && $(PIP_COMPILE) --quiet --generate-hashes --allow-unsafe --strip-extras --extra dev -o requirements-dev.txt pyproject.toml
+
+hooks: ## Install the git pre-commit hook (secret scan)
+	$(BIN)/pre-commit install
 
 up: ## Start db and api with Docker Compose
 	docker compose up --build -d

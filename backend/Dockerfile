@@ -6,11 +6,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /srv
 
-COPY pyproject.toml ./
+# Third-party packages come from the hashed lock file, in a layer that is cached until the lock
+# changes. Our own code is not pip-installed: uvicorn and alembic run from /srv, so the build
+# fetches nothing outside the lock.
+COPY requirements.txt ./
+RUN pip install --require-hashes -r requirements.txt
+
 COPY app ./app
 COPY alembic.ini ./
 COPY alembic ./alembic
-RUN pip install .
 
 RUN useradd --system --uid 10001 --no-create-home appuser
 USER appuser

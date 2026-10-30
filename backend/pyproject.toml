@@ -29,6 +29,8 @@ dev = [
   "ruff>=0.6",
   "mypy>=1.11",
   "pip-audit>=2.7",
+  "pip-tools>=7.4",
+  "pre-commit>=4.0",
 ]
 
 [tool.setuptools.packages.find]

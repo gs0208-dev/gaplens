@@ -47,6 +47,8 @@ Run these from the repo root. Use them instead of inventing your own.
 | `make up` / `make down` | Start or stop the Compose stack (db, api) |
 | `make logs` | Follow Compose logs |
 | `make migrate` | Apply Alembic migrations to the Compose database |
+| `make lock` | Regenerate `backend/requirements.txt` and `requirements-dev.txt` from `pyproject.toml` (run after changing backend dependencies) |
+| `make hooks` | Install the git pre-commit hook (gitleaks secret scan) |
 | `make test` | Backend tests (the database tests need `make up` first) |
 | `make lint` | ruff check and format check |
 | `make fmt` | ruff format and autofix |

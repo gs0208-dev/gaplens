@@ -1,0 +1,7 @@
+# Install the hook once per clone with `make hooks`. CI scans the full history as well, so a
+# commit made with --no-verify is still caught.
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks

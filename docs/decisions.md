@@ -257,3 +257,28 @@ Consequences:
 - A refresh that fails because of a network problem is treated as "no session", so a temporary outage on reload shows the login page. Signing in again fixes it.
 - A wrong `CORS_ORIGINS` makes every refresh fail with `origin_not_allowed`, which looks like "reload signs me out". The development origin is `http://localhost:5173`, which is the backend default.
 Alternatives: token in `localStorage` (readable by any script that runs on the page), refreshing on a timer (extra requests and the same race), one refresh per failed request without sharing (the race), a polling "is the other tab done" flag instead of a lock (can still race).
+
+## ADR-027: Backend lock files with pip-tools and hashes (2026-10-31)
+
+Context: ADR-011 asked for a backend lock file in Sprint 1. Until now `pyproject.toml` held only lower bounds, so CI, `make install` and the Docker image each resolved fresh versions, and a bad or tampered release could reach `main` without any change in the repository.
+Decision:
+- `backend/pyproject.toml` stays the file a person edits. `make lock` runs `pip-compile --generate-hashes` and writes `backend/requirements.txt` (runtime) and `backend/requirements-dev.txt` (runtime plus dev). They are generated and never edited by hand.
+- Every install uses them: `pip install --require-hashes -r ...` for third-party packages. `make install` and CI then install our own package with `--no-deps --no-build-isolation`, so the build uses the `setuptools` pinned in the lock instead of fetching an unchecked one. The Dockerfile installs the runtime file only (no test tools) and does not pip-install our code at all; uvicorn and alembic run from `/srv`. With hashes, pip refuses a file whose bytes differ from what was recorded.
+- The lock is generated with `--allow-unsafe`, which also pins `pip` and `setuptools`. Without it, a fresh environment fails with "all requirements must have their versions pinned" (found by installing into an empty venv).
+- CI regenerates the lock and fails if it changes, so editing `pyproject.toml` without running `make lock` is caught. `pip-compile` keeps existing pins unless asked to upgrade, so the check does not fail just because a new release appeared.
+- The files are named `requirements*.txt` so Dependabot's pip updater recognizes them and proposes version bumps as pull requests. Upgrading is then a reviewed change.
+- `pip-audit` in CI now audits the dev lock file, which is what is actually installed. It stays advisory until Sprint 4.
+- Dependencies added: `pip-tools` (lock generation) and `pre-commit` (ADR-028), both dev only.
+Consequences: builds are reproducible and a tampered package fails loudly. The cost is a second step after changing dependencies (`make lock`), and the hashes are produced for Python 3.12 on Linux, which is what CI and the image use; a developer on another platform still installs, because pip-compile records hashes for all published files of each version.
+Alternatives: uv with `uv.lock` (faster and one tool, but it replaces the venv, install and CI steps in one go and adds a tool to explain; revisit if install time becomes a problem), pinning `==` in `pyproject.toml` by hand (no hashes, no transitive pins), Poetry (a different project layout).
+
+## ADR-028: Secret scanning with gitleaks, in pre-commit and in CI (2026-10-31)
+
+Context: `docs/security.md` requires a secret scanner as a pre-commit hook and a CI step. A secret that reaches a public repository must be treated as leaked even if the commit is deleted later, so catching it before the commit matters most, and history must be scanned too.
+Decision:
+- Pre-commit: the `pre-commit` framework runs the gitleaks hook, pinned in `.pre-commit-config.yaml` to release `v8.30.1`. `make hooks` installs it once per clone. The hook scans staged changes only, so it is fast.
+- CI: a separate `secrets` job checks out the full history (`fetch-depth: 0`), downloads the pinned gitleaks release, checks its sha256 against a value written in the workflow, and runs `gitleaks git --redact`. `--redact` keeps any match out of the public log. CI is the backstop when someone commits with `--no-verify`.
+- The gitleaks binary is used directly, not `gitleaks-action`: the action needs a license for organization accounts and would be one more third-party action running with the repository token.
+- Default gitleaks rules. Exceptions are added only for a specific string, never for a whole path.
+Consequences: a leaked key is blocked at commit time and again in CI. The scanner finds patterns, so a weak password with no recognizable shape can still pass; the rule "never commit `.env`" stays in force. A hook is only active after `make hooks`, which is why CI scans too. When bumping gitleaks, update the version in `.pre-commit-config.yaml` and the version and checksum in the workflow together.
+Alternatives: GitHub secret scanning push protection alone (works only on the host, gives no local feedback, and its coverage depends on the plan), `detect-secrets` (baseline file to maintain), a hand-written git hook script (more code to own, no pinned version).

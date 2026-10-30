@@ -48,10 +48,13 @@ curl http://localhost:8000/health/ready
 For backend development:
 
 ```bash
-make install                # creates backend/.venv
+make install                # creates backend/.venv from the hashed lock files
+make hooks                  # installs the pre-commit secret scan (gitleaks), once per clone
 make migrate                # applies database migrations to the Compose database
 make check                  # lint, typecheck, tests (database tests need make up)
 ```
+
+After changing a backend dependency in `backend/pyproject.toml`, run `make lock` and commit the two `requirements*.txt` files; CI fails if they are out of date.
 
 For frontend development (the backend must be running, and `JWT_SECRET` must be set in `.env`):
 
@@ -78,7 +81,7 @@ make frontend-dev           # http://localhost:5173, proxies /api to the backend
 ## Roadmap
 
 - [x] Sprint 0: Foundation (repo, Docker Compose, health endpoints, CI)
-- [ ] Sprint 1: Auth
+- [x] Sprint 1: Auth
 - [ ] Sprint 2: RAG core
 - [ ] Sprint 3: Gap report and UI
 - [ ] Sprint 4: Security hardening, evaluation, deploy
