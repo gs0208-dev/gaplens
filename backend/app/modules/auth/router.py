@@ -47,7 +47,8 @@ async def register(
     body: RegisterRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> UserResponse:
-    user = await service.register_user(session, body.email, body.password)
+    _, ip = client_details(request)
+    user = await service.register_user(session, body.email, body.password, ip=ip)
     return UserResponse(user=UserOut.model_validate(user))
 
 
@@ -88,10 +89,12 @@ async def me(current_user: CurrentUser) -> UserResponse:
     dependencies=[Depends(require_allowed_origin)],
 )
 async def logout(
+    request: Request,
     session: Annotated[AsyncSession, Depends(get_session)],
     refresh_token: Annotated[str | None, Cookie()] = None,
 ) -> Response:
-    await service.logout(session, refresh_token)
+    _, ip = client_details(request)
+    await service.logout(session, refresh_token, ip=ip)
     # The cookie is cleared whatever happened above, so logging out twice is harmless.
     response = Response(status_code=status.HTTP_204_NO_CONTENT)
     clear_refresh_cookie(response)

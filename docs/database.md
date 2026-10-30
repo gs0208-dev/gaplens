@@ -209,6 +209,7 @@ CREATE INDEX finding_citations_chunk_id_idx   ON finding_citations (chunk_id);
 - `owner_id` is repeated on `document_chunks`, `analyses` and `chat_threads`. It is redundant on purpose: every query can filter on it directly, which keeps ownership checks to one predicate and makes a later switch to Row Level Security simple.
 - Findings citations are relational (`finding_citations`) because they are validated, queried and joined. Chat message citations are a `jsonb` snapshot because they are display-only and never queried.
 - Soft delete only on `documents` (`deleted_at`) so a re-upload of the same file works after deletion; a background cleanup hard-deletes soft-deleted rows after 30 days, which cascades to chunks, analyses and findings. Deleting a user cascades everything.
+- `audit_events.metadata` keys in use: `auth.login_failed` has `reason` and `email_sha256`; every other auth event has an empty object. `resource_type` is `user` for `auth.register` and `refresh_token_family` (with the family id as `resource_id`) for `auth.refresh_reuse_detected`. The ORM attribute is `event_metadata`, because `metadata` is reserved on SQLAlchemy models.
 - Embedding dimension 384 is tied to the model in `AGENTS.md`. Changing the model means a new migration, re-embedding all chunks, and a new value in `documents.embedding_model`.
 
 ## Query rules
