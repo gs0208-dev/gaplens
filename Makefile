@@ -44,13 +44,13 @@ test: ## Run backend tests (database tests need make up)
 	cd backend && .venv/bin/pytest
 
 lint: ## ruff check and format check
-	cd backend && .venv/bin/ruff check . && .venv/bin/ruff format --check .
+	cd backend && .venv/bin/ruff check --config pyproject.toml . ../evals && .venv/bin/ruff format --check --config pyproject.toml . ../evals
 
 fmt: ## ruff format and autofix
-	cd backend && .venv/bin/ruff check --fix . && .venv/bin/ruff format .
+	cd backend && .venv/bin/ruff check --fix --config pyproject.toml . ../evals && .venv/bin/ruff format --config pyproject.toml . ../evals
 
 typecheck: ## mypy
-	cd backend && .venv/bin/mypy app
+	cd backend && .venv/bin/mypy app ../evals/retrieval_eval.py
 
 check: lint typecheck test frontend-check ## Lint, typecheck and test, backend and frontend (must pass before finishing a task)
 

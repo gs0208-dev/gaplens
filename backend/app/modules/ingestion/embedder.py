@@ -1,14 +1,27 @@
+import asyncio
 import importlib
 import threading
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
+from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
-from typing import Protocol
+from typing import Any, Protocol
 
 from fastembed import TextEmbedding
 
 from app.core.config import get_settings
 
 EMBEDDING_DIMENSIONS = 384
+
+# One thread, on purpose. The model uses a lot of CPU and memory, so on a small host only one
+# embedding call runs at a time and the others wait their turn. It is also a thread that is not
+# tied to an event loop, which a lock or semaphore would be. Document chunks and questions share
+# it, so a question waits behind at most the batch that is running.
+_embedding_thread = ThreadPoolExecutor(max_workers=1, thread_name_prefix="embedding")
+
+
+async def run_in_embedding_thread[T](function: Callable[..., T], *args: Any) -> T:
+    """Run a blocking embedding call off the event loop, one at a time."""
+    return await asyncio.get_running_loop().run_in_executor(_embedding_thread, function, *args)
 
 
 class Embedder(Protocol):

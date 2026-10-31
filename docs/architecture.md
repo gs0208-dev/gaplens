@@ -53,7 +53,7 @@ gaplens/
         audit/       service.py  repository.py  models.py
         documents/   router.py  service.py  repository.py  schemas.py  models.py
         ingestion/   validate.py  errors.py  extract.py  structure.py  chunker.py  embedder.py  service.py  repository.py
-        retrieval/   service.py  repository.py
+        retrieval/   service.py  repository.py  errors.py
         analysis/    router.py  service.py  repository.py  schemas.py  models.py  citations.py
         chat/        router.py  service.py  repository.py  schemas.py  models.py
       ai/
@@ -64,7 +64,7 @@ gaplens/
   frontend/
     src/  app/  pages/  features/  components/ui/  lib/  styles/
   evals/
-    datasets/  golden/  run.py  results/ (gitignored)
+    datasets/  golden/  retrieval_eval.py  run.py  results/ (gitignored)
 ```
 
 Files inside a module:

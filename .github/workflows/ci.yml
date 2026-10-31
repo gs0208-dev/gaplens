@@ -53,9 +53,9 @@ jobs:
         working-directory: .
       - run: git diff --exit-code backend/requirements.txt backend/requirements-dev.txt
         working-directory: .
-      - run: ruff check .
-      - run: ruff format --check .
-      - run: mypy app
+      - run: ruff check --config pyproject.toml . ../evals
+      - run: ruff format --check --config pyproject.toml . ../evals
+      - run: mypy app ../evals/retrieval_eval.py
       - run: pytest
       # Advisory until the dependency set settles; make it blocking in Sprint 4.
       - run: pip-audit -r requirements-dev.txt

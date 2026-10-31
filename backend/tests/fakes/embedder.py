@@ -1,5 +1,6 @@
 import hashlib
 import math
+import threading
 
 from app.modules.ingestion.embedder import EMBEDDING_DIMENSIONS
 
@@ -21,6 +22,7 @@ class FakeEmbedder:
         self.passage_batch_sizes: list[int] = []
         self.passage_texts: list[str] = []
         self.queries: list[str] = []
+        self.query_thread_names: list[str] = []
         # Set to an exception to make the next calls fail.
         self.failure: Exception | None = None
 
@@ -35,4 +37,5 @@ class FakeEmbedder:
         if self.failure is not None:
             raise self.failure
         self.queries.append(text)
+        self.query_thread_names.append(threading.current_thread().name)
         return vector_for(text)

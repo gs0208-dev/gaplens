@@ -28,12 +28,14 @@ Why fastembed: it runs through ONNX Runtime without PyTorch, which keeps memory 
 
 ## Retrieval
 
+`retrieval/service.py` `retrieve(...)` is what chat calls. It checks that the document belongs to the user, is not deleted and is `ready` (otherwise the same 404 as a missing document, or 409 `document_not_ready`), embeds the question with `query_embed` on the shared embedding thread, runs the query, and applies the cutoff. Every result carries the chunk id, label, heading, content, page and a score.
+
 Query: see "Retrieval query" in `docs/database.md`. Parameters from config:
 
 | Setting | Start value | Notes |
 |---|---|---|
 | `RETRIEVAL_TOP_K` | 6 | Tune with recall@k from evals |
-| `RETRIEVAL_MIN_SCORE` | 0.0 (disabled) | Do not trust a threshold from any article. Cosine scores differ by model. Sprint 4 sets it by plotting scores of answerable and unanswerable eval questions and picking a value that separates them |
+| `RETRIEVAL_MIN_SCORE` | 0.0 (disabled; a value of 0 or less applies no cutoff at all) | Do not trust a threshold from any article. Cosine scores differ by model. Sprint 4 sets it by plotting scores of answerable and unanswerable eval questions and picking a value that separates them |
 
 Stretch options, only if evals show retrieval is the bottleneck: hybrid search (Postgres full-text plus vector, merged with reciprocal rank fusion), a reranker, query rewriting for follow-up questions.
 

@@ -247,6 +247,8 @@ ORDER BY embedding <=> :query_embedding
 LIMIT :k;
 ```
 
+Ties in score are broken by `chunk_index`, so equal scores always come back in the same order. The query itself only knows chunks; that the document is live and ready is checked by the retrieval service before it runs.
+
 Why no HNSW index yet: the filter `document_id = ?` narrows the search to a few hundred rows through `document_chunks_doc_index_uidx`, so Postgres sorts those exactly. An approximate index would add build cost and lower recall for no speed gain. Add an HNSW index (`USING hnsw (embedding vector_cosine_ops)`) only if cross-document search is introduced, and then check filtered-search recall, because approximate indexes with a selective `WHERE` can return fewer rows than requested.
 
 Latest analysis with findings and citations, two queries (no N+1):

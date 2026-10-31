@@ -2,10 +2,7 @@ import asyncio
 import logging
 import time
 import uuid
-from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
-from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.concurrency import run_in_threadpool
@@ -13,7 +10,7 @@ from starlette.concurrency import run_in_threadpool
 from app.core.config import get_settings
 from app.modules.ingestion import repository
 from app.modules.ingestion.chunker import Chunk, chunk_document
-from app.modules.ingestion.embedder import Embedder
+from app.modules.ingestion.embedder import Embedder, run_in_embedding_thread
 from app.modules.ingestion.errors import (
     GENERIC_FAILURE_MESSAGE,
     STUCK_MESSAGE,
@@ -28,34 +25,25 @@ logger = logging.getLogger(__name__)
 # docs/ai-engineering.md: passages are embedded in batches of 32.
 EMBED_BATCH_SIZE = 32
 
-# One thread, on purpose. The model uses a lot of CPU and memory, so on a small host only one
-# document is embedded at a time and the others wait their turn. It is also a thread that is not
-# tied to an event loop, which a lock or semaphore would be.
-_embedding_thread = ThreadPoolExecutor(max_workers=1, thread_name_prefix="embedding")
-
 SessionFactory = async_sessionmaker[AsyncSession]
-
-
-async def _run_in_embedding_thread[T](function: Callable[..., T], *args: Any) -> T:
-    return await asyncio.get_running_loop().run_in_executor(_embedding_thread, function, *args)
 
 
 def _prepare_chunks(data: bytes, mime_type: str) -> list[Chunk]:
     return chunk_document(extract_document(data, mime_type))
 
 
-def _text_to_embed(chunk: Chunk) -> str:
+def text_to_embed(chunk: Chunk) -> str:
     """The heading goes in front so a clause is embedded with the section it belongs to. The
     stored content stays raw, so a quote from it matches the original document."""
     return f"{chunk.heading}\n{chunk.content}" if chunk.heading else chunk.content
 
 
 async def _embed_all(embedder: Embedder, chunks: list[Chunk]) -> list[list[float]]:
-    texts = [_text_to_embed(chunk) for chunk in chunks]
+    texts = [text_to_embed(chunk) for chunk in chunks]
     vectors: list[list[float]] = []
     for start in range(0, len(texts), EMBED_BATCH_SIZE):
         batch = texts[start : start + EMBED_BATCH_SIZE]
-        vectors.extend(await _run_in_embedding_thread(embedder.embed_passages, batch))
+        vectors.extend(await run_in_embedding_thread(embedder.embed_passages, batch))
     return vectors
 
 

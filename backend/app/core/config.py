@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     stuck_after_minutes: int = 15
     sweep_interval_minutes: int = 5
 
+    # How many chunks a question gets, and the lowest score a chunk may have to be kept. 0.0 means
+    # no cutoff. Do not pick a cutoff by guesswork: scores differ between models, and Sprint 4
+    # chooses it from eval data (docs/ai-engineering.md).
+    retrieval_top_k: int = 6
+    retrieval_min_score: float = 0.0
+
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"
