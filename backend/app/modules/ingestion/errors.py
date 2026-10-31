@@ -41,3 +41,27 @@ class NoExtractableText(DomainError):
     code = "no_extractable_text"
     title = "No readable text"
     detail = "No text could be read from this file. Scanned documents are not supported."
+
+
+# The only texts ever stored in documents.error_message. They are fixed on purpose: an exception
+# message could quote the document, so it is never copied into the database or a response.
+GENERIC_FAILURE_MESSAGE = "This document could not be processed. Upload it again."
+TOO_MANY_SECTIONS_MESSAGE = (
+    "This document has too many sections to process. Split it into smaller documents."
+)
+NO_TEXT_MESSAGE = "No text could be read from this document."
+STUCK_MESSAGE = "Processing did not finish. Upload the document again."
+
+
+class ProcessingError(Exception):
+    """A failure whose message is safe to show to the user."""
+
+    safe_message = GENERIC_FAILURE_MESSAGE
+
+
+class TooManySections(ProcessingError):
+    safe_message = TOO_MANY_SECTIONS_MESSAGE
+
+
+class NothingToStore(ProcessingError):
+    safe_message = NO_TEXT_MESSAGE

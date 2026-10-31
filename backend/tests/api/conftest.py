@@ -4,14 +4,24 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from app.db.session import get_session
+from app.db.session import get_session, get_session_factory
 from app.main import app
-from tests.api.helpers import SAMPLE_PHRASE, Account, insert_user
+from app.modules.ingestion.embedder import get_embedder
+from tests.api.helpers import SAMPLE_PHRASE, Account, auth_headers, insert_user
+from tests.fakes.embedder import FakeEmbedder
 
 
 @pytest.fixture
-async def api_client(migrated_engine: AsyncEngine) -> AsyncIterator[AsyncClient]:
-    """HTTP client whose requests run against a fresh, fully migrated database."""
+def fake_embedder() -> FakeEmbedder:
+    return FakeEmbedder()
+
+
+@pytest.fixture
+async def api_client(
+    migrated_engine: AsyncEngine, fake_embedder: FakeEmbedder
+) -> AsyncIterator[AsyncClient]:
+    """HTTP client whose requests run against a fresh, fully migrated database, with a fake
+    embedding model. Background processing uses the same database and the same fake."""
     session_factory = async_sessionmaker(migrated_engine, expire_on_commit=False)
 
     async def override() -> AsyncIterator[AsyncSession]:
@@ -19,6 +29,8 @@ async def api_client(migrated_engine: AsyncEngine) -> AsyncIterator[AsyncClient]
             yield session
 
     app.dependency_overrides[get_session] = override
+    app.dependency_overrides[get_session_factory] = lambda: session_factory
+    app.dependency_overrides[get_embedder] = lambda: fake_embedder
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as http_client:
         yield http_client
@@ -27,3 +39,13 @@ async def api_client(migrated_engine: AsyncEngine) -> AsyncIterator[AsyncClient]
 @pytest.fixture
 async def account(migrated_engine: AsyncEngine) -> Account:
     return await insert_user(migrated_engine, "ana@example.com", SAMPLE_PHRASE)
+
+
+@pytest.fixture
+async def headers(api_client: AsyncClient, account: Account) -> dict[str, str]:
+    return await auth_headers(api_client, account)
+
+
+@pytest.fixture
+async def other_account(migrated_engine: AsyncEngine) -> Account:
+    return await insert_user(migrated_engine, "bob@example.com", SAMPLE_PHRASE)

@@ -2,6 +2,7 @@ import hashlib
 import re
 import unicodedata
 import uuid
+from dataclasses import dataclass
 from pathlib import PurePosixPath
 
 from fastapi import UploadFile
@@ -18,10 +19,20 @@ from app.modules.documents.models import Document
 from app.modules.ingestion.validate import InspectedUpload, UploadLimits, inspect_upload
 
 DOCUMENT_UPLOAD = "document.upload"
+DOCUMENT_DELETE = "document.delete"
 SHA256_UNIQUE_INDEX = "documents_owner_sha256_uidx"
 MAX_TITLE_LENGTH = 200
 MAX_FILENAME_LENGTH = 255
 FALLBACK_FILENAME = "document"
+
+
+@dataclass(frozen=True)
+class StoredUpload:
+    """The new document and the bytes it came from, which only the processing task needs. The
+    bytes are not stored anywhere (ADR-006); they live in memory until that task ends."""
+
+    document: Document
+    data: bytes
 
 
 def clean_filename(raw: str | None) -> str:
@@ -64,7 +75,7 @@ async def upload_document(
     upload: UploadFile,
     title: str | None,
     ip: str | None,
-) -> Document:
+) -> StoredUpload:
     settings = get_settings()
     # Reads one byte more than the cap, so an oversized file is noticed without reading all of it.
     data = await upload.read(settings.upload_max_bytes + 1)
@@ -103,7 +114,7 @@ async def upload_document(
         ip=ip,
     )
     await session.commit()
-    return document
+    return StoredUpload(document=document, data=data)
 
 
 async def get_document(
@@ -113,3 +124,25 @@ async def get_document(
     if document is None:
         raise DocumentNotFound
     return document
+
+
+async def delete_document(
+    session: AsyncSession, *, owner_id: uuid.UUID, document_id: uuid.UUID, ip: str | None
+) -> None:
+    deleted = await repository.soft_delete_document(
+        session, owner_id=owner_id, document_id=document_id
+    )
+    if not deleted:
+        raise DocumentNotFound
+    # The document row stays for the retention period, but its text must not: a user who
+    # deletes a confidential document expects it gone, not kept for 30 days (ADR-036).
+    await repository.delete_chunks(session, owner_id=owner_id, document_id=document_id)
+    await record_audit_event(
+        session,
+        action=DOCUMENT_DELETE,
+        actor_id=owner_id,
+        resource_type="document",
+        resource_id=document_id,
+        ip=ip,
+    )
+    await session.commit()

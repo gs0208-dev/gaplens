@@ -1,9 +1,9 @@
 import uuid
 
-from sqlalchemy import insert, select
+from sqlalchemy import delete, func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.documents.models import Document
+from app.modules.documents.models import Document, DocumentChunk
 
 
 async def create_document(
@@ -46,3 +46,36 @@ async def get_document(
         )
     )
     return result.scalar_one_or_none()
+
+
+async def soft_delete_document(
+    session: AsyncSession, *, owner_id: uuid.UUID, document_id: uuid.UUID
+) -> bool:
+    """Mark one live document of one owner as deleted. False if there was nothing to delete.
+
+    One UPDATE both checks and deletes, so of two simultaneous deletes only one gets a row back,
+    and only that one goes on to write an audit event.
+    """
+    result = await session.execute(
+        update(Document)
+        .where(
+            Document.id == document_id,
+            Document.owner_id == owner_id,
+            Document.deleted_at.is_(None),
+        )
+        .values(deleted_at=func.now())
+        .returning(Document.id)
+        .execution_options(synchronize_session=False)
+    )
+    return result.first() is not None
+
+
+async def delete_chunks(
+    session: AsyncSession, *, owner_id: uuid.UUID, document_id: uuid.UUID
+) -> None:
+    """Remove the stored text of a document. Served by document_chunks_doc_index_uidx."""
+    await session.execute(
+        delete(DocumentChunk)
+        .where(DocumentChunk.document_id == document_id, DocumentChunk.owner_id == owner_id)
+        .execution_options(synchronize_session=False)
+    )

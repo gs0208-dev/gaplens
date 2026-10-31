@@ -20,3 +20,9 @@ async def get_session() -> AsyncIterator[AsyncSession]:
     """FastAPI dependency that yields one database session per request."""
     async with SessionFactory() as session:
         yield session
+
+
+def get_session_factory() -> async_sessionmaker[AsyncSession]:
+    """FastAPI dependency for work that outlives the request, such as background tasks, which
+    must open their own sessions. Tests override it so they never touch the real database."""
+    return SessionFactory

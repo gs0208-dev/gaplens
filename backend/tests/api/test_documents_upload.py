@@ -4,22 +4,21 @@ import uuid
 from typing import Any
 
 import pytest
-from httpx import AsyncClient, Response
+from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.core.config import get_settings
 from tests.api.helpers import (
-    SAMPLE_PHRASE,
+    DOCUMENTS_URL,
     Account,
     audit_rows,
-    insert_user,
-    log_in_for_access_token,
+    auth_headers,
+    upload,
     without_request_id,
 )
 from tests.pdf_fixtures import blank_pdf, encrypted_pdf, text_pdf
 
-DOCUMENTS_URL = "/api/v1/documents"
 POLICY = "Refunds above 500 dollars need approval from a team lead."
 DOCUMENT_FIELDS = {
     "id",
@@ -39,23 +38,6 @@ def distinct_text(label: str) -> bytes:
     return f"3.1 {label}. {POLICY}".encode()
 
 
-async def auth_headers(client: AsyncClient, account: Account) -> dict[str, str]:
-    return {"Authorization": f"Bearer {await log_in_for_access_token(client, account)}"}
-
-
-async def upload(
-    client: AsyncClient,
-    headers: dict[str, str],
-    data: bytes,
-    filename: str = "sop.txt",
-    title: str | None = None,
-) -> Response:
-    form = {"title": title} if title is not None else None
-    return await client.post(
-        DOCUMENTS_URL, headers=headers, files={"file": (filename, data)}, data=form
-    )
-
-
 async def document_rows(engine: AsyncEngine) -> list[Any]:
     async with engine.connect() as connection:
         result = await connection.execute(
@@ -65,16 +47,6 @@ async def document_rows(engine: AsyncEngine) -> list[Any]:
             )
         )
         return list(result)
-
-
-@pytest.fixture
-async def headers(api_client: AsyncClient, account: Account) -> dict[str, str]:
-    return await auth_headers(api_client, account)
-
-
-@pytest.fixture
-async def other_account(migrated_engine: AsyncEngine) -> Account:
-    return await insert_user(migrated_engine, "bob@example.com", SAMPLE_PHRASE)
 
 
 async def test_upload_returns_202_with_the_document(
@@ -106,7 +78,9 @@ async def test_upload_stores_metadata_and_hash_only(
     (row,) = await document_rows(migrated_engine)
     assert row.sha256 == hashlib.sha256(data).hexdigest()
     assert row.size_bytes == len(data)
-    assert row.status == "uploaded"
+    # The response says "uploaded"; by the time the test reads the row, the background task
+    # that runs after the response has finished.
+    assert row.status == "ready"
     assert row.page_count is None
 
 
@@ -409,7 +383,10 @@ async def test_the_owner_can_read_their_document(
     response = await api_client.get(f"{DOCUMENTS_URL}/{created['id']}", headers=headers)
 
     assert response.status_code == 200
-    assert response.json() == {"document": created}
+    # Only the processing result differs from the upload response, which was built before the
+    # background task ran.
+    processed = {"status": "ready", "chunk_count": 1}
+    assert response.json() == {"document": {**created, **processed}}
 
 
 async def test_another_users_document_looks_like_a_missing_one(

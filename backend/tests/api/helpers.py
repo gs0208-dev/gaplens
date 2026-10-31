@@ -142,3 +142,23 @@ async def stored_refresh_tokens(engine: AsyncEngine) -> list[Any]:
             text("SELECT token_hash, family_id, expires_at, user_agent, ip FROM refresh_tokens")
         )
         return list(result)
+
+
+DOCUMENTS_URL = "/api/v1/documents"
+
+
+async def auth_headers(client: AsyncClient, account: Account) -> dict[str, str]:
+    return {"Authorization": f"Bearer {await log_in_for_access_token(client, account)}"}
+
+
+async def upload(
+    client: AsyncClient,
+    headers: dict[str, str],
+    data: bytes,
+    filename: str = "sop.txt",
+    title: str | None = None,
+) -> Response:
+    form = {"title": title} if title is not None else None
+    return await client.post(
+        DOCUMENTS_URL, headers=headers, files={"file": (filename, data)}, data=form
+    )

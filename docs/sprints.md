@@ -73,6 +73,7 @@ Goal: upload a document, see it processed, ask questions and get cited answers (
 | S2-3 Extraction and structure detection | PDF, text and Markdown produce text with page numbers and detected section labels; unit tests on fixtures, including the sample SOP |
 | S2-4 Chunker | Rules from `docs/ai-engineering.md` implemented; tests for clause chunks, merging of short clauses, splitting of long ones, unstructured fallback |
 | S2-5 Embedding and storage | Chunks embedded in batches off the event loop and stored with one bulk insert; document reaches `ready`; failures end in `failed` with a safe message; stuck documents are swept |
+| S2-5a Delete document | `DELETE /documents/{id}` soft deletes for the owner (`204`); the document then reads as `404`, its stored text is removed, a `document.delete` audit event is written, and the same file can be uploaded again; another user's id gives the same `404` as a missing one. Added after S2-5 left failed documents blocking re-upload (ADR-035, ADR-036) |
 | S2-6 Retrieval | Scoped query returns top-k with scores; test proves another user's document returns nothing |
 | S2-7 Chat endpoint | Grounded answers with verified citations; not-found path works; fake LLM used in tests; `llm_calls` row written |
 | S2-8 Documents and chat UI (minimal) | Upload dialog, documents table with status polling, document workspace with chat tab |

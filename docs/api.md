@@ -76,9 +76,9 @@ Rate limits: login is 5 requests per minute per IP, and an email address is bloc
 
 `document`: `{ id, title, filename, mime_type, size_bytes, status, error_message, page_count, chunk_count, created_at }`.
 
-Built so far: `POST /documents` and `GET /documents/{id}` (S2-2). The list, chunks and delete endpoints are not built yet and no sprint story owns them.
+Built so far: `POST /documents`, `GET /documents/{id}` and `DELETE /documents/{id}`. The list and chunks endpoints are not built yet and no sprint story owns them.
 
-Upload (`POST /documents`): needs `Authorization: Bearer <access token>`. The body is `multipart/form-data` with `file` (required) and `title` (optional, trimmed, at most 200 characters, default is the filename without its extension). Unknown form fields are ignored; a missing `file` or an over-long `title` is `422 validation_error`. The response is `202 { document }` with `status: "uploaded"`; nothing processes the document yet, so it stays `uploaded` until ingestion is built (S2-5). The original file is not kept, only its metadata and SHA-256.
+Upload (`POST /documents`): needs `Authorization: Bearer <access token>`. The body is `multipart/form-data` with `file` (required) and `title` (optional, trimmed, at most 200 characters, default is the filename without its extension). Unknown form fields are ignored; a missing `file` or an over-long `title` is `422 validation_error`. The response is `202 { document }` with `status: "uploaded"`, built before processing starts. Processing then runs in the background (see Status below). The original file is not kept, only its metadata and SHA-256.
 
 What the file is is decided from its bytes, never its name or the content type the client sends. A file starting with `%PDF-` is a PDF. Anything else must be valid UTF-8 with no NUL bytes and is stored as text; `.md` and `.markdown` names get the label `text/markdown`, everything else `text/plain`. The filename is stored as a display string only: directory parts and control characters are removed and it is cut to 255 characters.
 
@@ -100,6 +100,19 @@ Rejections, checked in this order:
 A rejected upload creates nothing and writes no audit event. A successful one writes `document.upload` in the same transaction.
 
 Get (`GET /documents/{id}`): needs the same token. A document that does not exist, belongs to someone else, or is deleted gets the same `404 document_not_found`.
+
+Delete (`DELETE /documents/{id}`): needs the same token. `204` with no body when the owner's document was deleted. It is a soft delete: the document row (title, hash and other metadata, no document text) is kept for 30 days and then purged, and the stored chunks are removed at once. The document then reads as `404`, and the same file can be uploaded again straight away. A document that does not exist, belongs to someone else, or is already deleted gets the same `404 document_not_found`, so a second delete is a `404`. It works in every status, including `processing`: the background task then stores nothing. A `document.delete` audit event is written in the same transaction.
+
+Status. `status` moves `uploaded`, `processing`, `ready` or `failed`, and the client polls `GET /documents/{id}` every 2 seconds until it is `ready` or `failed`. `ready` means the document has been split into `chunk_count` chunks and each has a stored embedding. `failed` always has one of these fixed `error_message` texts, never text from the document or from an exception:
+
+| `error_message` | Cause |
+|---|---|
+| `This document could not be processed. Upload it again.` | any unexpected failure while extracting, embedding or storing |
+| `This document has too many sections to process. Split it into smaller documents.` | more than 1000 chunks (`MAX_CHUNKS_PER_DOCUMENT`) |
+| `No text could be read from this document.` | extraction produced no chunks |
+| `Processing did not finish. Upload the document again.` | the document sat in `uploaded` or `processing` for over 15 minutes, for example because the server restarted; a sweep at start and every 5 minutes marks it |
+
+A failed document stays failed, and the original file is not kept. While it exists, uploading the same bytes again is rejected as `duplicate_document`; deleting it frees the file for a new upload.
 
 ## Chat (Sprint 2 backend, Sprint 3 UI)
 

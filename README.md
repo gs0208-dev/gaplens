@@ -54,6 +54,8 @@ make migrate                # applies database migrations to the Compose databas
 make check                  # lint, typecheck, tests (database tests need make up)
 ```
 
+The Docker image downloads the embedding model (about 130 MB) while it is built. Outside Docker, the first document you upload downloads it once into a temporary folder; set `EMBEDDING_CACHE_DIR` to keep it.
+
 After changing a backend dependency in `backend/pyproject.toml`, run `make lock` and commit the two `requirements*.txt` files; CI fails if they are out of date.
 
 For frontend development (the backend must be running, and `JWT_SECRET` must be set in `.env`):

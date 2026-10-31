@@ -21,10 +21,10 @@ Document size is capped (300,000 characters, about 75,000 tokens is the hard cei
    - Unstructured documents: sliding window of about 300 tokens with 50 tokens of overlap, split at sentence boundaries.
    - Token counts are estimated as `words * 1.3`. This is for sizing only; billing numbers come from the API's reported usage.
    - Every chunk stores `section_label`, `heading`, `page_start`, the raw `content`, and a position (`chunk_index`).
-5. Embed (`ingestion/embedder.py`): `fastembed` with `BAAI/bge-small-en-v1.5`, 384 dimensions, vectors normalized. The text that is embedded is `heading + "\n" + content`; the stored `content` stays raw so citations quote the original. Passages use the passage embedding method and queries use the query embedding method (the model expects a query prefix); check the current fastembed documentation for the exact method names and do not guess. Embedding runs in a worker thread, in batches of 32.
-6. Store chunks with one bulk insert. Set `documents.embedding_model`, `chunk_count`, status `ready`.
+5. Embed (`ingestion/embedder.py`, `ingestion/service.py`): `fastembed` with `BAAI/bge-small-en-v1.5`, 384 dimensions, vectors normalized (measured: norm 1.0). The text that is embedded is `heading + "\n" + content`; the stored `content` stays raw so citations quote the original. Passages use `passage_embed` and queries use `query_embed` (the model expects a query prefix). Embedding runs in batches of 32 on one dedicated worker thread, so it is off the event loop and only one document is embedded at a time. A document with more than 1000 chunks is failed before embedding.
+6. Store chunks (`ingestion/repository.py`): one transaction that marks the document `ready` (setting `embedding_model` and `chunk_count`) and inserts the chunks in batches of 500, copying `owner_id` from the document. The document first moves `uploaded` to `processing` with one atomic update, so a document is processed once. Any failure rolls back and marks the document `failed` with a fixed message (see `docs/api.md`). Documents stuck in `uploaded` or `processing` for over 15 minutes are failed by a sweep at start-up and every 5 minutes.
 
-Why fastembed: it runs through ONNX Runtime without PyTorch, which keeps memory and image size small enough for low-cost hosting. Verify memory use on the real instance in Sprint 2.
+Why fastembed: it runs through ONNX Runtime without PyTorch, which keeps memory and image size small enough for low-cost hosting. Measured on the development machine (ADR-034): about 490 MB peak memory after embedding 1000 chunks, and about 60 seconds for 1000 chunks of 150 tokens. Memory on the real instance is a Sprint 4 deploy check.
 
 ## Retrieval
 

@@ -32,6 +32,17 @@ class Settings(BaseSettings):
     upload_max_pages: int = 100
     upload_max_text_chars: int = 300_000
 
+    # The vector(384) column in document_chunks is tied to this model (docs/database.md).
+    embedding_model: str = "BAAI/bge-small-en-v1.5"
+    # Where the model files live. None uses fastembed's default (a temporary folder). The Docker
+    # image sets it to a folder filled at build time so no download happens while serving.
+    embedding_cache_dir: str | None = None
+    # A hostile file of thousands of tiny clauses must not become thousands of embeddings.
+    max_chunks_per_document: int = 1000
+    # A document still uploaded or processing after this long was abandoned (the process died).
+    stuck_after_minutes: int = 15
+    sweep_interval_minutes: int = 5
+
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"
