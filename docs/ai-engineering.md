@@ -41,9 +41,9 @@ Stretch options, only if evals show retrieval is the bottleneck: hybrid search (
 
 ## Gap report
 
-Call: one request per analysis. Model from `ANTHROPIC_MODEL`, temperature 0, `max_tokens` capped, timeout 90 seconds, at most two retries with exponential backoff on 429 and 5xx.
+Call: one request per analysis. Model from `ANTHROPIC_MODEL`, no sampling parameters (the models reject `temperature`, ADR-038), `max_tokens` capped, timeout 90 seconds, at most two retries with exponential backoff on 429 and 5xx.
 
-Structured output: define one tool whose `input_schema` is the JSON schema generated from the Pydantic model below, and force the model to call it. The tool is never executed; its input is the structured result. Check the current Anthropic SDK documentation for exact parameter names.
+Structured output: ask for a reply that matches the JSON schema generated from the Pydantic model below, through `output_config.format` (structured outputs), and validate the reply with the same model. Forcing a tool call with `tool_choice` is not used: the current models reject it (ADR-038). `app/ai/client.py` and `app/ai/calls.py` already do this for chat; the gap report reuses them in S3-3.
 
 ```python
 from typing import Literal
@@ -90,8 +90,8 @@ Prompt requirements (the owner writes `gap_report.v1.md`; this is the contract, 
 1. Embed the question, retrieve top-k chunks scoped to the document and owner.
 2. If `RETRIEVAL_MIN_SCORE` is set and the best score is below it, return `grounded=false` without calling the model.
 3. Otherwise build the prompt: numbered sources `[S1]`, `[S2]` with section labels, then the question. The system prompt requires answering only from the sources, citing source numbers, and answering "not found in the document" when the sources do not contain the answer. If sources contradict each other, say so and cite both.
-4. Structured output: `{ answer: str, cited_sources: list[int], grounded: bool }`.
-5. Verify that every cited number exists; attach quote and section label from the retrieved chunk. If `grounded` is true with no valid citation, downgrade to `grounded=false`.
+4. Structured output: `{ answer: str, cited_sources: list[int], grounded: bool }`, requested through `output_config.format` and validated with Pydantic (`ChatAnswerOut`). A reply that does not validate gets one repair retry that includes the validation error; a refusal or a cut-off reply is not retried; after that the request fails with `503 llm_invalid_output`.
+5. Verify that every cited number exists; attach quote and section label from the retrieved chunk (the quote is the first 300 characters of the chunk, cut at a word, so it is verbatim). Invalid and repeated numbers are dropped. If `grounded` is true with no valid citation, downgrade to `grounded=false`. Every answer that is not grounded is stored and shown as the fixed text "This is not found in the document.", never as the model's own words.
 6. For follow-up questions, include the last 4 messages of the thread in the prompt. Retrieval uses only the current question in v1; query rewriting for follow-ups is a stretch option.
 
 ## Guardrails summary
@@ -145,7 +145,7 @@ Targets are starting points. Raise them as the system improves; do not lower the
 
 ### Procedure
 
-- `make eval` runs each generation case three times (temperature 0 reduces but does not remove variation), writes `evals/results/<date>-<git-sha>.json` and a Markdown summary, and prints a comparison with the previous run.
+- `make eval` runs each generation case three times (the model has no temperature setting, so variation is measured, not removed), writes `evals/results/<date>-<git-sha>.json` and a Markdown summary, and prints a comparison with the previous run.
 - Run evals before and after any change to a prompt, the chunker, retrieval parameters, the embedding model or the LLM model. Paste both result tables into the pull request.
 - Keep the results summary of the final run in the README (Evaluation section).
 - Do not use an LLM as judge in v1. Matching is deterministic so that runs are comparable. Revisit with a judge only for qualities that substring matching cannot capture, and calibrate the judge against hand labels first.

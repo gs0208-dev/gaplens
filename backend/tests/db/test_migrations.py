@@ -15,6 +15,8 @@ from app.modules.documents import models as document_models
 
 AUTH_TABLES = {"users", "refresh_tokens", "audit_events"}
 DOCUMENT_TABLES = {"documents", "document_chunks"}
+CHAT_TABLES = {"chat_threads", "chat_messages", "llm_calls"}
+ALL_TABLES = AUTH_TABLES | DOCUMENT_TABLES | CHAT_TABLES | {"alembic_version"}
 DOCUMENTED_INDEXES = {
     "users_email_lower_uidx",
     "refresh_tokens_token_hash_uidx",
@@ -26,6 +28,10 @@ DOCUMENTED_INDEXES = {
     "documents_owner_sha256_uidx",
     "documents_owner_created_idx",
     "document_chunks_doc_index_uidx",
+    "chat_threads_document_updated_idx",
+    "chat_messages_thread_created_idx",
+    "llm_calls_owner_created_idx",
+    "llm_calls_created_idx",
 }
 
 
@@ -59,7 +65,7 @@ async def test_upgrade_from_empty_creates_the_auth_and_document_tables(
 ) -> None:
     await upgrade(alembic_config)
 
-    assert await table_names(engine) == AUTH_TABLES | DOCUMENT_TABLES | {"alembic_version"}
+    assert await table_names(engine) == ALL_TABLES
 
 
 async def test_upgrade_creates_the_documented_indexes(
@@ -108,7 +114,7 @@ async def test_downgrade_removes_the_tables_and_upgrade_restores_them(
     assert await table_names(engine) == {"alembic_version"}
 
     await upgrade(alembic_config)
-    assert await table_names(engine) == AUTH_TABLES | DOCUMENT_TABLES | {"alembic_version"}
+    assert await table_names(engine) == ALL_TABLES
 
 
 async def test_downgrade_one_step_removes_only_the_document_tables(
@@ -317,3 +323,120 @@ async def test_deleting_a_user_deletes_their_documents_and_chunks(
 
     assert await count_rows(migrated_engine, "documents") == 0
     assert await count_rows(migrated_engine, "document_chunks") == 0
+
+
+async def test_downgrade_to_0002_removes_only_the_chat_tables(
+    alembic_config: Config, engine: AsyncEngine
+) -> None:
+    await upgrade(alembic_config)
+
+    await downgrade(alembic_config, "0002")
+
+    assert await table_names(engine) == AUTH_TABLES | DOCUMENT_TABLES | {"alembic_version"}
+
+
+async def add_thread(engine: AsyncEngine, document_id: uuid.UUID, owner_id: uuid.UUID) -> uuid.UUID:
+    async with engine.begin() as connection:
+        result = await connection.execute(
+            text(
+                "INSERT INTO chat_threads (document_id, owner_id) "
+                "VALUES (:document_id, :owner_id) RETURNING id"
+            ),
+            {"document_id": document_id, "owner_id": owner_id},
+        )
+        return result.scalar_one()
+
+
+async def add_message(engine: AsyncEngine, thread_id: uuid.UUID, role: str = "user") -> None:
+    async with engine.begin() as connection:
+        await connection.execute(
+            text(
+                "INSERT INTO chat_messages (thread_id, role, content) VALUES (:t, :role, 'hello')"
+            ),
+            {"t": thread_id, "role": role},
+        )
+
+
+async def add_llm_call(
+    engine: AsyncEngine,
+    owner_id: uuid.UUID | None,
+    *,
+    purpose: str = "chat",
+    status: str = "ok",
+) -> None:
+    async with engine.begin() as connection:
+        await connection.execute(
+            text(
+                "INSERT INTO llm_calls (owner_id, purpose, model, prompt_version, status) "
+                "VALUES (:owner_id, :purpose, 'm', 'chat_answer.v1', :status)"
+            ),
+            {"owner_id": owner_id, "purpose": purpose, "status": status},
+        )
+
+
+async def test_a_message_needs_a_known_role_and_defaults_to_no_citations(
+    migrated_engine: AsyncEngine,
+) -> None:
+    owner_id = await add_user(migrated_engine)
+    thread_id = await add_thread(
+        migrated_engine, await add_document(migrated_engine, owner_id), owner_id
+    )
+
+    await add_message(migrated_engine, thread_id, "assistant")
+    with pytest.raises(IntegrityError):
+        await add_message(migrated_engine, thread_id, "system")
+
+    async with migrated_engine.connect() as connection:
+        citations = (
+            await connection.execute(text("SELECT citations FROM chat_messages"))
+        ).scalar_one()
+    assert citations == []
+
+
+@pytest.mark.parametrize(("purpose", "status"), [("shopping", "ok"), ("chat", "done")])
+async def test_llm_calls_only_accept_known_purposes_and_statuses(
+    migrated_engine: AsyncEngine, purpose: str, status: str
+) -> None:
+    owner_id = await add_user(migrated_engine)
+
+    with pytest.raises(IntegrityError):
+        await add_llm_call(migrated_engine, owner_id, purpose=purpose, status=status)
+
+
+@pytest.mark.parametrize("status", ["ok", "error", "timeout", "invalid_output"])
+async def test_llm_calls_accept_every_documented_status(
+    migrated_engine: AsyncEngine, status: str
+) -> None:
+    owner_id = await add_user(migrated_engine)
+
+    await add_llm_call(migrated_engine, owner_id, status=status)
+
+    assert await count_rows(migrated_engine, "llm_calls") == 1
+
+
+async def test_deleting_a_document_deletes_its_threads_and_messages(
+    migrated_engine: AsyncEngine,
+) -> None:
+    owner_id = await add_user(migrated_engine)
+    document_id = await add_document(migrated_engine, owner_id)
+    await add_message(migrated_engine, await add_thread(migrated_engine, document_id, owner_id))
+
+    async with migrated_engine.begin() as connection:
+        await connection.execute(text("DELETE FROM documents WHERE id = :id"), {"id": document_id})
+
+    assert await count_rows(migrated_engine, "chat_threads") == 0
+    assert await count_rows(migrated_engine, "chat_messages") == 0
+
+
+async def test_deleting_a_user_keeps_their_llm_calls_but_forgets_who_made_them(
+    migrated_engine: AsyncEngine,
+) -> None:
+    owner_id = await add_user(migrated_engine)
+    await add_llm_call(migrated_engine, owner_id)
+
+    async with migrated_engine.begin() as connection:
+        await connection.execute(text("DELETE FROM users WHERE id = :id"), {"id": owner_id})
+
+    async with migrated_engine.connect() as connection:
+        remaining = (await connection.execute(text("SELECT owner_id FROM llm_calls"))).all()
+    assert [row.owner_id for row in remaining] == [None]

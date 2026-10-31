@@ -29,7 +29,7 @@ Every error response uses this shape (modeled on RFC 9457 problem details):
 
 `code` is a stable machine-readable value. `detail` is safe for display. Validation errors (422) add `errors: [{ "field": "email", "message": "..." }]`. Stack traces and internal messages never appear.
 
-Error codes in use: `validation_error` (422), `email_already_registered` (409), `invalid_credentials` (401), `invalid_access_token` (401), `invalid_refresh_token` (401), `origin_not_allowed` (403), `rate_limited` (429), `internal_error` (500), `file_too_large` (413), `unsupported_file_type` (415), `encrypted_pdf`, `pdf_unreadable`, `too_many_pages`, `text_too_long` and `no_extractable_text` (all 422), `duplicate_document` (409), `document_not_found` (404). Add a code to this list in the same commit as the code that returns it.
+Error codes in use: `validation_error` (422), `email_already_registered` (409), `invalid_credentials` (401), `invalid_access_token` (401), `invalid_refresh_token` (401), `origin_not_allowed` (403), `rate_limited` (429), `internal_error` (500), `file_too_large` (413), `unsupported_file_type` (415), `document_not_ready` (409), `thread_not_found` (404), `invalid_cursor` (422), `llm_unavailable`, `llm_timeout` and `llm_invalid_output` (all 503), `encrypted_pdf`, `pdf_unreadable`, `too_many_pages`, `text_too_long` and `no_extractable_text` (all 422), `duplicate_document` (409), `document_not_found` (404). Add a code to this list in the same commit as the code that returns it.
 
 Status codes: 400 malformed input, 401 missing or invalid token, 403 request from an origin that is not allowed, 404 not found or not yours, 409 conflict (duplicate upload, analysis already running, email in use), 413 file too large, 415 unsupported file type, 422 validation, 429 rate limit, 500 unexpected, 503 dependency down.
 
@@ -122,7 +122,17 @@ A failed document stays failed, and the original file is not kept. While it exis
 | GET | `/documents/{id}/threads` | Paginated threads |
 | GET | `/threads/{id}/messages` | Messages in order |
 
-`message`: `{ id, role, content, grounded, citations: [{ chunk_id, section_label, quote }], created_at }`. `question` is 1 to 1000 characters.
+`message`: `{ id, role, content, grounded, citations: [{ chunk_id, section_label, quote }], created_at }`. `question` is 1 to 1000 characters (trimmed).
+
+Built so far: `POST /documents/{id}/chat` and `GET /threads/{id}/messages`. The threads list has no story yet.
+
+Chat (`POST /documents/{id}/chat`): needs `Authorization: Bearer <access token>`. Body `{ "question": "...", "thread_id": "..." }`, unknown fields are `422`. The document must be the user's, not deleted, and `ready`: a missing, foreign or deleted document is `404 document_not_found`, one that is still processing or failed is `409 document_not_ready`. `thread_id` is optional; a thread that is missing, someone else's, or belongs to another document is `404 thread_not_found`. Without `thread_id` a new thread is created, titled with the start of the question. At most 30 questions per hour per user (`429 rate_limited`).
+
+The reply is `200 { thread_id, message }` where `message` is the assistant message. Either the answer is grounded (`grounded: true`, at least one citation, each citation a real chunk of this document with its section label and a quote that is the start of the stored chunk text), or the document does not answer and the content is exactly `This is not found in the document.` with `grounded: false` and no citations. The model's own wording is only ever shown for a grounded answer. Questions are answered from the best matching chunks of the document only. When the optional score cutoff leaves no chunk, the model is not called.
+
+If the model cannot be used the answer is `503`: `llm_unavailable` (no key configured, provider errors, rate limits after retries), `llm_timeout`, or `llm_invalid_output` (a reply that still did not match the format after one repair attempt, a refusal, or a cut-off reply). Nothing is stored in the conversation when this happens, and the attempt is recorded in `llm_calls`.
+
+Messages (`GET /threads/{id}/messages`): needs the same token. Messages oldest first as `{ items, next_cursor }`, `?limit` (default 20, at most 100) and `?cursor` (opaque, from the previous page; a bad one is `422 invalid_cursor`). Another user's or a missing thread is `404 thread_not_found`.
 
 ## Analyses and findings (Sprint 3)
 

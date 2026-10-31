@@ -49,6 +49,14 @@ class Settings(BaseSettings):
     retrieval_top_k: int = 6
     retrieval_min_score: float = 0.0
 
+    # The Anthropic API key is optional so the app (and the tests) start without one; a chat
+    # request without it fails with a clear 503. Never log it. No sampling settings exist on
+    # purpose: the model rejects temperature, top_p and top_k (ADR-038).
+    anthropic_api_key: SecretStr | None = None
+    anthropic_model: str = "claude-sonnet-5-5"
+    llm_timeout_seconds: float = 60.0
+    chat_max_tokens: int = 2048
+
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"

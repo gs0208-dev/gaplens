@@ -16,6 +16,7 @@ from app.core.security import InvalidAccessTokenError, verify_access_token
 LOGIN_LIMIT = "5/minute"
 REGISTER_LIMIT = "5/hour"
 UPLOAD_LIMIT = "10/hour"
+CHAT_LIMIT = "30/hour"
 EMAIL_FAILURE_LIMIT = parse("5/15minutes")
 
 # Per IP address. Counters live in memory, which is enough while there is one backend

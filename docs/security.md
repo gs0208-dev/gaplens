@@ -126,7 +126,7 @@ Limits are in-memory (slowapi) while there is one backend instance. With more th
 ## Per-sprint security checklist
 
 - Sprint 1: auth tests above, ownership helper, audit events, rate limit on login, gitleaks.
-- Sprint 2: upload validation tests, ownership tests for documents and chunks, parsing limits.
+- Sprint 2: upload validation tests, ownership tests for documents, chunks, threads and messages, parsing limits, prompt escaping in `app/ai/prompts.py`, citation verification in `app/modules/chat/grounding.py`, no content in `llm_calls` or logs.
 - Sprint 3: prompt escaping, citation verification, schema validation, token budget, injection dataset.
 - Sprint 4: CSP and headers, dependency audit made blocking, CORS review, container review, restore test, account deletion, final review against this file.
 

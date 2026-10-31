@@ -11,7 +11,7 @@ from app.modules.documents.errors import DocumentNotFound
 from app.modules.retrieval import repository
 from app.modules.retrieval.errors import DocumentNotReady
 from app.modules.retrieval.service import retrieve
-from tests.api.helpers import Account, upload
+from tests.api.helpers import Account, embedded_text_of_chunk, upload, user_id
 from tests.fakes.embedder import FakeEmbedder, vector_for
 from tests.sop_fixtures import SOP_TEXT
 
@@ -23,29 +23,6 @@ async def create_document(
 ) -> uuid.UUID:
     response = await upload(client, headers, data, "sop.md")
     return uuid.UUID(response.json()["document"]["id"])
-
-
-async def user_id(engine: AsyncEngine, email: str) -> uuid.UUID:
-    async with engine.connect() as connection:
-        result = await connection.execute(
-            text("SELECT id FROM users WHERE email = :email"), {"email": email}
-        )
-        return result.scalar_one()
-
-
-async def embedded_text_of_chunk(engine: AsyncEngine, document_id: uuid.UUID, index: int) -> str:
-    """Exactly what the pipeline embedded for a chunk: the heading, a newline, the content."""
-    async with engine.connect() as connection:
-        row = (
-            await connection.execute(
-                text(
-                    "SELECT heading, content FROM document_chunks "
-                    "WHERE document_id = :id AND chunk_index = :index"
-                ),
-                {"id": document_id, "index": index},
-            )
-        ).one()
-    return f"{row.heading}\n{row.content}" if row.heading else str(row.content)
 
 
 async def ask(

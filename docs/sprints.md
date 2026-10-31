@@ -90,7 +90,7 @@ Goal: the core feature. Generate a cited gap report and review it in the workspa
 |---|---|
 | S3-1 Analysis tables | Migration for `analyses`, `findings`, `finding_citations`; one-active-analysis index |
 | S3-2 Gap report prompt v1 | `gap_report.v1.md` written by the owner against the contract; prompt builder escapes the document; version recorded |
-| S3-3 Structured call and validation | Forced tool call returns `GapReportOut`; invalid output gets one repair retry then `failed`; timeouts and retries as specified |
+| S3-3 Structured call and validation | A schema-constrained reply (structured outputs, not a forced tool call, see ADR-038) returns `GapReportOut`; invalid output gets one repair retry then `failed`; timeouts and retries as specified |
 | S3-4 Citation verification | Quotes verified against chunks; evidence rules per kind enforced; dropped items counted; unit tests for exact, whitespace-different and fabricated quotes |
 | S3-5 Analysis endpoints | Start (202), latest, by id, review status patch; 409 when already running; ownership tests |
 | S3-6 Report UI | Summary, severity counts, filters, findings with evidence, copy suggested question, status control; evidence click highlights the source |
@@ -98,7 +98,7 @@ Goal: the core feature. Generate a cited gap report and review it in the workspa
 
 Evals: gap recall and extra findings on the sample SOP; injection sample passes.
 
-Explain-back: why the report does not use retrieval, how forced tool use gives structured output and why you still validate, how a fabricated quote is caught, what prompt injection is and which of your controls stops it.
+Explain-back: why the report does not use retrieval, how schema-constrained output gives structured replies and why you still validate, how a fabricated quote is caught, what prompt injection is and which of your controls stops it.
 
 ## Sprint 4: Harden, evaluate, ship
 

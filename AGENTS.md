@@ -136,7 +136,7 @@ Full detail in `docs/ai-engineering.md`.
 - Structured output only: validate with Pydantic. On invalid output retry once with the validation error, then fail the job with a clear status.
 - Every finding and every chat answer must carry citations that are verified in code against the stored chunk text. An unverifiable citation is dropped; a finding left with none (when one is required) is dropped.
 - When the document does not contain the answer, the correct output is "not found in the document". Never guess.
-- Temperature 0. Explicit timeouts, at most two retries with backoff on 429 and 5xx. Record every call in `llm_calls` (tokens, latency, status, prompt version; no content).
+- No sampling parameters: the current models reject `temperature`, `top_p` and `top_k`, so the code sends none (ADR-038). Repeatability comes from schema-constrained output, low effort, a fixed prompt version and evals run three times. Explicit timeouts, at most two retries with backoff on 429 and 5xx. Record every call in `llm_calls` (tokens, latency, status, prompt version; no content).
 - Any change to a prompt, chunker, retrieval parameter or model must be accompanied by an eval run (`docs/ai-engineering.md`, section Evals). Report the before and after numbers.
 - Never put real client data or real secrets in prompts, fixtures or eval datasets. Use the fictional documents in `evals/datasets/`.
 

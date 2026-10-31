@@ -162,3 +162,27 @@ async def upload(
     return await client.post(
         DOCUMENTS_URL, headers=headers, files={"file": (filename, data)}, data=form
     )
+
+
+async def user_id(engine: AsyncEngine, email: str) -> Any:
+    async with engine.connect() as connection:
+        result = await connection.execute(
+            text("SELECT id FROM users WHERE email = :email"), {"email": email}
+        )
+        return result.scalar_one()
+
+
+async def embedded_text_of_chunk(engine: AsyncEngine, document_id: Any, index: int) -> str:
+    """Exactly what the pipeline embedded for a chunk: the heading, a newline, the content.
+    Asking this as a question makes the fake embedder rank that chunk first."""
+    async with engine.connect() as connection:
+        row = (
+            await connection.execute(
+                text(
+                    "SELECT heading, content FROM document_chunks "
+                    "WHERE document_id = :id AND chunk_index = :index"
+                ),
+                {"id": document_id, "index": index},
+            )
+        ).one()
+    return f"{row.heading}\n{row.content}" if row.heading else str(row.content)

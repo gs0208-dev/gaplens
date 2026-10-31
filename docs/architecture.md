@@ -43,7 +43,7 @@ gaplens/
     app/
       main.py                    app factory, middleware, routers
       core/
-        config.py  logging.py  errors.py  security.py  rate_limit.py  request_id.py  body_limit.py
+        config.py  logging.py  errors.py  security.py  rate_limit.py  request_id.py  body_limit.py  pagination.py
       db/
         session.py  base.py
       api/
@@ -55,9 +55,9 @@ gaplens/
         ingestion/   validate.py  errors.py  extract.py  structure.py  chunker.py  embedder.py  service.py  repository.py
         retrieval/   service.py  repository.py  errors.py
         analysis/    router.py  service.py  repository.py  schemas.py  models.py  citations.py
-        chat/        router.py  service.py  repository.py  schemas.py  models.py
+        chat/        router.py  service.py  repository.py  schemas.py  models.py  grounding.py  errors.py
       ai/
-        client.py  schemas.py  calls.py
+        client.py  schemas.py  calls.py  errors.py  models.py  prompts.py
         prompts/     gap_report.v1.md  chat_answer.v1.md
     tests/
       fakes/  unit/  api/  db/
