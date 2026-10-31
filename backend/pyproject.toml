@@ -19,6 +19,7 @@ dependencies = [
   "pyjwt>=2.8",
   "slowapi>=0.1.9",
   "limits>=3.13",
+  "pgvector>=0.3",
 ]
 
 [project.optional-dependencies]
