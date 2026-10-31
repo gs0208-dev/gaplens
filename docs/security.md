@@ -47,10 +47,11 @@ GapLens stores people's confidential business documents and sends them to an LLM
 
 - All request bodies are Pydantic models with explicit limits (`max_length`, enums). Unknown fields are rejected (`extra="forbid"`).
 - Uploads:
-  - Maximum 5 MB, at most 100 pages, extracted text at most 300,000 characters (limits are config values).
-  - Allowed: PDF (starts with `%PDF-`), plain text and Markdown (valid UTF-8, no NUL bytes). Everything else is rejected with 415.
+  - Maximum 5 MB (413), at most 100 pages, extracted text at most 300,000 characters (limits are config values; the last two are 422).
+  - Allowed: PDF (starts with `%PDF-`), plain text and Markdown (valid UTF-8, no NUL bytes). Everything else is rejected with 415. The type comes from the bytes, never from the filename or the client's content type.
   - PDFs that are encrypted or produce no extractable text are rejected with a clear message (no OCR).
   - Duplicates (same `sha256` for the same owner) are rejected with 409.
+  - The body size is checked from `Content-Length` before the multipart body is read. A client that streams without that header is only stopped by the host's own request limit (Sprint 4).
   - Parsing happens in a worker thread; Sprint 4 evaluates moving it to a subprocess with a timeout.
 - Display strings (titles, filenames) are length-limited and treated as plain text everywhere.
 

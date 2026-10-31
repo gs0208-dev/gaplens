@@ -8,7 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.sql.elements import TextClause
 
-from app.modules.auth import repository
+from app.modules.audit import repository
 from tests.api.helpers import (
     LOGIN_URL,
     REGISTER_URL,

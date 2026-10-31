@@ -29,7 +29,7 @@ Every error response uses this shape (modeled on RFC 9457 problem details):
 
 `code` is a stable machine-readable value. `detail` is safe for display. Validation errors (422) add `errors: [{ "field": "email", "message": "..." }]`. Stack traces and internal messages never appear.
 
-Error codes in use: `validation_error` (422), `email_already_registered` (409), `invalid_credentials` (401), `invalid_access_token` (401), `invalid_refresh_token` (401), `origin_not_allowed` (403), `rate_limited` (429), `internal_error` (500). Add a code to this list in the same commit as the code that returns it.
+Error codes in use: `validation_error` (422), `email_already_registered` (409), `invalid_credentials` (401), `invalid_access_token` (401), `invalid_refresh_token` (401), `origin_not_allowed` (403), `rate_limited` (429), `internal_error` (500), `file_too_large` (413), `unsupported_file_type` (415), `encrypted_pdf`, `pdf_unreadable`, `too_many_pages`, `text_too_long` and `no_extractable_text` (all 422), `duplicate_document` (409), `document_not_found` (404). Add a code to this list in the same commit as the code that returns it.
 
 Status codes: 400 malformed input, 401 missing or invalid token, 403 request from an origin that is not allowed, 404 not found or not yours, 409 conflict (duplicate upload, analysis already running, email in use), 413 file too large, 415 unsupported file type, 422 validation, 429 rate limit, 500 unexpected, 503 dependency down.
 
@@ -75,6 +75,31 @@ Rate limits: login is 5 requests per minute per IP, and an email address is bloc
 | DELETE | `/documents/{id}` | `204`; soft delete |
 
 `document`: `{ id, title, filename, mime_type, size_bytes, status, error_message, page_count, chunk_count, created_at }`.
+
+Built so far: `POST /documents` and `GET /documents/{id}` (S2-2). The list, chunks and delete endpoints are not built yet and no sprint story owns them.
+
+Upload (`POST /documents`): needs `Authorization: Bearer <access token>`. The body is `multipart/form-data` with `file` (required) and `title` (optional, trimmed, at most 200 characters, default is the filename without its extension). Unknown form fields are ignored; a missing `file` or an over-long `title` is `422 validation_error`. The response is `202 { document }` with `status: "uploaded"`; nothing processes the document yet, so it stays `uploaded` until ingestion is built (S2-5). The original file is not kept, only its metadata and SHA-256.
+
+What the file is is decided from its bytes, never its name or the content type the client sends. A file starting with `%PDF-` is a PDF. Anything else must be valid UTF-8 with no NUL bytes and is stored as text; `.md` and `.markdown` names get the label `text/markdown`, everything else `text/plain`. The filename is stored as a display string only: directory parts and control characters are removed and it is cut to 255 characters.
+
+Rejections, checked in this order:
+
+| Status | `code` | When |
+|---|---|---|
+| 401 | `invalid_access_token` | missing or invalid token |
+| 413 | `file_too_large` | file over 5 MiB (`UPLOAD_MAX_BYTES`), or a declared body clearly larger than that, which is refused before it is read |
+| 415 | `unsupported_file_type` | not a PDF and not UTF-8 text without NUL bytes |
+| 422 | `pdf_unreadable` | the PDF cannot be parsed |
+| 422 | `encrypted_pdf` | the PDF is encrypted, with any password |
+| 422 | `too_many_pages` | more than 100 pages (`UPLOAD_MAX_PAGES`) |
+| 422 | `text_too_long` | more than 300,000 extracted characters (`UPLOAD_MAX_TEXT_CHARS`) |
+| 422 | `no_extractable_text` | no text after trimming (a scan, or an empty file) |
+| 409 | `duplicate_document` | the same bytes were already uploaded by this user and not deleted |
+| 429 | `rate_limited` | more than 10 uploads per hour per user |
+
+A rejected upload creates nothing and writes no audit event. A successful one writes `document.upload` in the same transaction.
+
+Get (`GET /documents/{id}`): needs the same token. A document that does not exist, belongs to someone else, or is deleted gets the same `404 document_not_found`.
 
 ## Chat (Sprint 2 backend, Sprint 3 UI)
 

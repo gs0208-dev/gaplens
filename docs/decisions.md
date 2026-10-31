@@ -297,3 +297,31 @@ Decision:
 - A test compares the models with the migrated database using Alembic's `compare_metadata`. A mutation check (changing a nullability and an index uniqueness in the model) made it fail. It does not reliably see changes to a partial index's `WHERE` clause or to a CHECK expression, so those are covered by the behavior tests (duplicate, soft delete, bad status, zero size, empty title, negative index, wrong vector size, cascades).
 Consequences: one more dependency, locked with hashes in the existing lock files. Chunks cannot hold a vector of the wrong size. Chat and `llm_calls` tables are not here; they arrive with S2-7 in their own migration.
 Alternatives: a small hand-written `UserDefinedType` for `vector(384)` (no dependency, but S2-5 and S2-6 would need hand-written encoding and casts), a database trigger or composite foreign key to force the chunk owner to equal the document owner (stronger, but not in `docs/database.md` and it would complicate the insert).
+
+## ADR-030: pypdf and python-multipart (2026-10-31)
+
+Context: S2-2 reads PDFs and receives file uploads. Neither capability is in the standard library or in FastAPI itself.
+Decision:
+- Add `pypdf` (already named in the fixed stack in `AGENTS.md`) to open a PDF, see whether it is encrypted, count pages and pull out text. It is pure Python, so the image needs no system packages.
+- Add `python-multipart`, which FastAPI requires to read `multipart/form-data`. Without it a route with a file parameter fails at startup.
+Consequences: both are locked with hashes (ADR-027). pypdf parses untrusted bytes, so a parser bug is a real risk. The caps (5 MiB, 100 pages, 300,000 characters) and the worker thread reduce it, and ADR-031 says what is still open.
+Alternatives: PyMuPDF (faster, but a C library with a copyleft licence and a heavier image), pdfminer.six (more code to get page-by-page text), accepting only text files (rejects the documents consultants actually receive).
+
+## ADR-031: How upload validation works (2026-10-31)
+
+Context: S2-2 is the first place that handles a hostile file. Each rule below is one the owner must be able to explain.
+Decision:
+- The file type comes from the bytes. `%PDF-` at the start means PDF. Anything else must decode as strict UTF-8 and contain no NUL byte, otherwise `415`. A PNG named `report.pdf` is rejected; a PDF named `notes.txt` is treated as a PDF. The client's content type is ignored. Markdown cannot be told from plain text by bytes, so a `.md` or `.markdown` name only chooses the label `text/markdown`; it can never make a file acceptable.
+- The checks run in this order, cheapest first: size, type, then for a PDF: can it be opened, is it encrypted, page count (before any text is read), extracted characters (stopping the moment the cap is passed), any text at all. A large document therefore costs almost nothing to refuse.
+- Text checks happen in the upload request, in a worker thread (`run_in_threadpool`), so the user gets an immediate, specific error instead of a document that later fails. This parses a PDF once for validation; ingestion (S2-3, S2-5) will parse it again from the same bytes, bounded by the same caps. The cost is accepted to keep errors immediate.
+- Any encryption is refused, even with an empty user password, as `docs/security.md` says. Any exception from the parser becomes `pdf_unreadable`; only the exception type is logged, because its message can quote the file.
+- Duplicates are decided by the unique index, not a prior lookup (the same race as email in ADR-018). The index name is read from the driver's exception.
+- The filename is display text. Directory parts from either separator and control characters are removed, `.` and `..` are replaced, and it is cut to 255 characters. It is never used as a path, and the original file is never written to disk by our code.
+- `Content-Length` is checked by a small ASGI middleware before the body is read. Starlette spools the whole multipart body before the route runs, so a size check in the route alone would let a huge upload be buffered first. It is limit plus 64 KiB for multipart framing. A client that sends no `Content-Length` (chunked) is not stopped by this; counting the stream was left out because FastAPI turns an exception raised while reading the body into a generic 4xx, which would need response rewriting. The host's request limit is the control for that case, set up in Sprint 4. The route still reads at most the cap plus one byte from the spooled file.
+- The upload limit is 10 per hour per user (`docs/security.md`). slowapi's key function decodes the bearer token itself, because the limit runs before the route's own dependency. A request without a valid token is keyed by IP and then gets `401`.
+- The audit event `document.upload` is written in the same transaction as the insert. This is the first non-auth event, so as ADR-024 said, `AuditEvent` and `record_audit_event` moved from the auth module into `app/modules/audit/`. Auth keeps its own action names and `email_digest`. The move changed no behavior; the audit tests are unchanged apart from the module they patch.
+Consequences:
+- Not isolated: a malformed PDF could still make pypdf slow or memory hungry inside the caps, in the API process. The request is bounded by the 5 MiB limit, but there is no timeout on parsing. Sprint 4 decides whether to move parsing to a subprocess with a timeout.
+- A user who is rate limited still counts rejected files. That is intended: rejected files cost parsing time too.
+- Until S2-5, an uploaded document stays at `uploaded` and nothing keeps its text.
+Alternatives: trusting the extension or the content type (trivially spoofed), validating in the background and marking the document failed (the error would no longer be immediate and a hostile file would still be stored), a lookup before insert for duplicates (race), a streaming body counter (see above), storing the file so ingestion needs no second parse (ADR-006 says no).

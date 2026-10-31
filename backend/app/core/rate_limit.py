@@ -11,14 +11,33 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from app.core.errors import RateLimited, problem_response
+from app.core.security import InvalidAccessTokenError, verify_access_token
 
 LOGIN_LIMIT = "5/minute"
 REGISTER_LIMIT = "5/hour"
+UPLOAD_LIMIT = "10/hour"
 EMAIL_FAILURE_LIMIT = parse("5/15minutes")
 
 # Per IP address. Counters live in memory, which is enough while there is one backend
 # instance (docs/security.md). A moving window avoids the burst a fixed window allows at its edge.
 limiter = Limiter(key_func=get_remote_address, strategy="moving-window")
+
+
+def user_key(request: Request) -> str:
+    """Rate limit key for signed-in endpoints: the user id from the access token.
+
+    The token is verified here because the limit is checked before the route's own dependency
+    runs. A missing or invalid token falls back to the IP address; the route rejects it with
+    401 anyway.
+    """
+    authorization = request.headers.get("authorization", "")
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() == "bearer" and token:
+        try:
+            return f"user:{verify_access_token(token)}"
+        except InvalidAccessTokenError:
+            pass
+    return get_remote_address(request)
 
 
 class EmailFailureLimiter:

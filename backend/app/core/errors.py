@@ -36,6 +36,14 @@ class RateLimited(DomainError):
         return {"Retry-After": str(self.retry_after)}
 
 
+class FileTooLarge(DomainError):
+    # Shared by the body size guard in front of the app and by the upload service.
+    status_code = 413
+    code = "file_too_large"
+    title = "File too large"
+    detail = "This file is larger than the upload limit."
+
+
 def problem_response(
     request: Request,
     *,

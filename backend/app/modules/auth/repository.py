@@ -1,12 +1,11 @@
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
 
 from sqlalchemy import func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.auth.models import AuditEvent, RefreshToken, User
+from app.modules.auth.models import RefreshToken, User
 
 
 @dataclass(frozen=True)
@@ -143,30 +142,6 @@ async def link_replacement(
         .where(RefreshToken.id == old_token_id)
         .values(replaced_by=new_token_id)
         .execution_options(synchronize_session=False)
-    )
-
-
-async def add_audit_event(
-    session: AsyncSession,
-    *,
-    action: str,
-    actor_id: uuid.UUID | None,
-    resource_type: str | None,
-    resource_id: uuid.UUID | None,
-    ip: str | None,
-    request_id: str | None,
-    event_metadata: dict[str, Any],
-) -> None:
-    await session.execute(
-        insert(AuditEvent).values(
-            action=action,
-            actor_id=actor_id,
-            resource_type=resource_type,
-            resource_id=resource_id,
-            ip=ip,
-            request_id=request_id,
-            event_metadata=event_metadata,
-        )
     )
 
 

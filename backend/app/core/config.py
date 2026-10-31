@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     access_token_minutes: int = 15
     refresh_token_days: int = 7
 
+    # Upload caps from docs/security.md. The text cap is also what keeps a whole document
+    # inside a single LLM call (docs/ai-engineering.md).
+    upload_max_bytes: int = 5 * 1024 * 1024
+    upload_max_pages: int = 100
+    upload_max_text_chars: int = 300_000
+
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"

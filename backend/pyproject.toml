@@ -20,6 +20,8 @@ dependencies = [
   "slowapi>=0.1.9",
   "limits>=3.13",
   "pgvector>=0.3",
+  "pypdf>=5.0",
+  "python-multipart>=0.0.20",
 ]
 
 [project.optional-dependencies]

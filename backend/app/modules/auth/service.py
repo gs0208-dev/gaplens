@@ -17,6 +17,7 @@ from app.core.security import (
     hash_refresh_token,
     verify_password,
 )
+from app.modules.audit.service import record_audit_event
 from app.modules.auth import audit, repository
 from app.modules.auth.errors import (
     EmailAlreadyRegistered,
@@ -68,7 +69,7 @@ async def register_user(
         if not _violates_email_index(error):
             raise
         raise EmailAlreadyRegistered from error
-    await audit.record_audit_event(
+    await record_audit_event(
         session,
         action=audit.REGISTER,
         actor_id=user.id,
@@ -101,7 +102,7 @@ async def login(
         # Every kind of failure does the same work here, one insert and one commit, so the
         # time it takes still does not reveal which kind it was. The commit must come before
         # the error, because raising it rolls the transaction back.
-        await audit.record_audit_event(
+        await record_audit_event(
             session,
             action=audit.LOGIN_FAILED,
             actor_id=user.id if user is not None else None,
@@ -120,7 +121,7 @@ async def login(
         session, user, family_id=uuid.uuid4(), replaces=None, user_agent=user_agent, ip=ip, now=now
     )
     await repository.mark_login(session, user.id, now)
-    await audit.record_audit_event(session, action=audit.LOGIN, actor_id=user.id, ip=ip)
+    await record_audit_event(session, action=audit.LOGIN, actor_id=user.id, ip=ip)
     await session.commit()
     return result
 
@@ -146,7 +147,7 @@ async def refresh_session(
         reused = await repository.find_revoked_token(session, token_hash)
         if reused is not None:
             await repository.revoke_family(session, reused.family_id, now)
-            await audit.record_audit_event(
+            await record_audit_event(
                 session,
                 action=audit.REFRESH_REUSE_DETECTED,
                 actor_id=reused.user_id,
@@ -185,7 +186,7 @@ async def logout(session: AsyncSession, refresh_token: str | None, *, ip: str | 
     )
     # Only a logout that really ended a login is recorded, so a repeated one is not.
     if user_id is not None:
-        await audit.record_audit_event(session, action=audit.LOGOUT, actor_id=user_id, ip=ip)
+        await record_audit_event(session, action=audit.LOGOUT, actor_id=user_id, ip=ip)
     await session.commit()
 
 

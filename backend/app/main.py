@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.health import router as health_router
 from app.api.router import api_router
+from app.core.body_limit import MULTIPART_OVERHEAD_BYTES, BodySizeLimitMiddleware
 from app.core.config import get_settings
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging
@@ -22,6 +23,12 @@ def create_app() -> FastAPI:
         openapi_url=None if settings.is_production else "/openapi.json",
     )
 
+    # Added first, so it sits inside CORS and request id: its 413 still carries both.
+    app.add_middleware(
+        BodySizeLimitMiddleware,
+        path="/api/v1/documents",
+        max_bytes=settings.upload_max_bytes + MULTIPART_OVERHEAD_BYTES,
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
