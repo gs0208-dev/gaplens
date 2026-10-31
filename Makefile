@@ -3,8 +3,9 @@
 PYTHON ?= python3.12
 VENV := backend/.venv
 BIN  := $(VENV)/bin
-# CI has no venv; it runs `make lock PIP_COMPILE=pip-compile`.
-PIP_COMPILE ?= $(abspath $(BIN))/pip-compile
+# CI has no venv; it runs `make lock LOCK_TOOL=pip-compile`. Do not name this PIP_*: make passes
+# command-line variables to pip as environment variables, and pip rejects unknown PIP_ options.
+LOCK_TOOL ?= $(abspath $(BIN))/pip-compile
 
 help: ## List commands
 	@grep -E "^[a-zA-Z_-]+:.*## " $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "%-12s %s\n", $$1, $$2}'
@@ -18,8 +19,8 @@ install: ## Create backend venv and install dev dependencies from the lock file
 # Reads backend/pyproject.toml and keeps the versions already pinned. To upgrade a package, run
 # `cd backend && .venv/bin/pip-compile --upgrade-package <name> ...` with the same arguments.
 lock: ## Regenerate the backend lock files from pyproject.toml
-	cd backend && $(PIP_COMPILE) --quiet --generate-hashes --allow-unsafe --strip-extras -o requirements.txt pyproject.toml
-	cd backend && $(PIP_COMPILE) --quiet --generate-hashes --allow-unsafe --strip-extras --extra dev -o requirements-dev.txt pyproject.toml
+	cd backend && $(LOCK_TOOL) --quiet --generate-hashes --allow-unsafe --strip-extras -o requirements.txt pyproject.toml
+	cd backend && $(LOCK_TOOL) --quiet --generate-hashes --allow-unsafe --strip-extras --extra dev -o requirements-dev.txt pyproject.toml
 
 hooks: ## Install the git pre-commit hook (secret scan)
 	$(BIN)/pre-commit install

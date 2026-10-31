@@ -49,7 +49,7 @@ jobs:
       - run: pip install --require-hashes -r requirements-dev.txt
       - run: pip install --no-deps --no-build-isolation -e .
       # Fails when pyproject.toml changed and the lock files were not regenerated with make lock.
-      - run: make lock PIP_COMPILE=pip-compile
+      - run: make lock LOCK_TOOL=pip-compile
         working-directory: .
       - run: git diff --exit-code backend/requirements.txt backend/requirements-dev.txt
         working-directory: .
