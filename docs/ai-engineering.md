@@ -14,8 +14,8 @@ Document size is capped (300,000 characters, about 75,000 tokens is the hard cei
 ## Ingestion pipeline
 
 1. Validate (see `docs/security.md`).
-2. Extract text. PDF through `pypdf`, page by page, keeping page numbers. Plain text and Markdown are read as UTF-8. Normalize whitespace and Unicode (NFKC), remove repeated headers and footers when the same line appears on most pages.
-3. Detect structure. Lines that start with a numbered clause (`3`, `3.1`, `3.1.2`, optionally followed by `.` or `)`) or a Markdown heading start a new section. Keep the label and heading text. If no structure is found, fall back to paragraph splitting.
+2. Extract text (`ingestion/extract.py`). PDF through `pypdf`, page by page, keeping page numbers. Plain text and Markdown are read as UTF-8 and have no pages. Normalize whitespace and Unicode (NFKC), remove repeated headers and footers when the same line appears at the edge of most pages (PDFs of three or more pages; page-number lines are compared with their digits folded, every other line exactly).
+3. Detect structure (`ingestion/structure.py`). Lines that start with a numbered clause (`3`, `3.1`, `3.1.2`, optionally followed by `.` or `)`, and then text that starts with an uppercase letter) or, in Markdown files only, a heading start a new section. Each section keeps its label, its text and its start page, and a `heading`: the title of the closest enclosing section, found by shortening the label (`3.1.2`, `3.1`, `3`) or, failing that, the document title. A numbered title with no text of its own, followed by a sub-clause, is context for its clauses rather than a section of its own. If no structure is found, fall back to paragraph splitting.
 4. Chunk (`ingestion/chunker.py`):
    - Structured documents: one chunk per clause. A clause under 40 tokens is merged with its following siblings in the same parent section until it reaches about 120 tokens; the label becomes a range (`3.1-3.3`). A clause over 400 tokens is split at sentence boundaries with no overlap, keeping the same label.
    - Unstructured documents: sliding window of about 300 tokens with 50 tokens of overlap, split at sentence boundaries.

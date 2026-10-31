@@ -6,8 +6,12 @@ from io import BytesIO
 from pypdf import PdfReader, PdfWriter
 
 
+def _escape(line: str) -> str:
+    return line.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
 def text_pdf(pages: list[str]) -> bytes:
-    """A valid PDF with one line of Helvetica text per page, written by hand."""
+    """A valid PDF with Helvetica text, written by hand. A newline in a page starts a new line."""
     objects: list[bytes] = []
     page_count = len(pages)
     # Object numbers: 1 catalog, 2 page tree, 3 font, then a page and a content stream per page.
@@ -18,8 +22,9 @@ def text_pdf(pages: list[str]) -> bytes:
     objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
     for index, text in enumerate(pages):
         content_number = first_page + 2 * index + 1
-        escaped = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
-        stream = f"BT /F1 12 Tf 72 720 Td ({escaped}) Tj ET".encode()
+        # One text-showing operator per line; T* moves to the next line using the leading (TL).
+        shown = "\nT*\n".join(f"({_escape(line)}) Tj" for line in text.split("\n"))
+        stream = f"BT /F1 12 Tf 14 TL 72 720 Td\n{shown}\nET".encode()
         objects.append(
             (
                 "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "

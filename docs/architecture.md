@@ -52,7 +52,7 @@ gaplens/
         auth/        router.py  service.py  repository.py  schemas.py  models.py
         audit/       service.py  repository.py  models.py
         documents/   router.py  service.py  repository.py  schemas.py  models.py
-        ingestion/   validate.py  errors.py  extract.py  chunker.py  embedder.py  service.py
+        ingestion/   validate.py  errors.py  extract.py  structure.py  chunker.py  embedder.py  service.py
         retrieval/   service.py  repository.py
         analysis/    router.py  service.py  repository.py  schemas.py  models.py  citations.py
         chat/        router.py  service.py  repository.py  schemas.py  models.py
