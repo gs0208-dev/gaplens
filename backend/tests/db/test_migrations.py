@@ -16,7 +16,8 @@ from app.modules.documents import models as document_models
 AUTH_TABLES = {"users", "refresh_tokens", "audit_events"}
 DOCUMENT_TABLES = {"documents", "document_chunks"}
 CHAT_TABLES = {"chat_threads", "chat_messages", "llm_calls"}
-ALL_TABLES = AUTH_TABLES | DOCUMENT_TABLES | CHAT_TABLES | {"alembic_version"}
+ANALYSIS_TABLES = {"analyses", "findings", "finding_citations"}
+ALL_TABLES = AUTH_TABLES | DOCUMENT_TABLES | CHAT_TABLES | ANALYSIS_TABLES | {"alembic_version"}
 DOCUMENTED_INDEXES = {
     "users_email_lower_uidx",
     "refresh_tokens_token_hash_uidx",
@@ -32,6 +33,11 @@ DOCUMENTED_INDEXES = {
     "chat_messages_thread_created_idx",
     "llm_calls_owner_created_idx",
     "llm_calls_created_idx",
+    "analyses_document_created_idx",
+    "analyses_one_active_per_document_uidx",
+    "findings_analysis_position_uidx",
+    "finding_citations_finding_id_idx",
+    "finding_citations_chunk_id_idx",
 }
 
 
@@ -440,3 +446,294 @@ async def test_deleting_a_user_keeps_their_llm_calls_but_forgets_who_made_them(
     async with migrated_engine.connect() as connection:
         remaining = (await connection.execute(text("SELECT owner_id FROM llm_calls"))).all()
     assert [row.owner_id for row in remaining] == [None]
+
+
+async def test_downgrade_to_0003_removes_only_the_analysis_tables(
+    alembic_config: Config, engine: AsyncEngine
+) -> None:
+    await upgrade(alembic_config)
+
+    await downgrade(alembic_config, "0003")
+
+    assert await table_names(engine) == (
+        AUTH_TABLES | DOCUMENT_TABLES | CHAT_TABLES | {"alembic_version"}
+    )
+
+
+async def add_analysis(
+    engine: AsyncEngine,
+    document_id: uuid.UUID,
+    owner_id: uuid.UUID,
+    status: str | None = None,
+) -> uuid.UUID:
+    # Leaving the status out is how the default is tested, so it is only bound when given.
+    columns = "document_id, owner_id, prompt_version, model" + (", status" if status else "")
+    values = ":document_id, :owner_id, 'gap_report.v1', 'm'" + (", :status" if status else "")
+    parameters: dict[str, object] = {"document_id": document_id, "owner_id": owner_id}
+    if status:
+        parameters["status"] = status
+    async with engine.begin() as connection:
+        result = await connection.execute(
+            text(f"INSERT INTO analyses ({columns}) VALUES ({values}) RETURNING id"),  # noqa: S608
+            parameters,
+        )
+        return result.scalar_one()
+
+
+async def add_finding(
+    engine: AsyncEngine,
+    analysis_id: uuid.UUID,
+    position: int = 0,
+    kind: str = "missing",
+    severity: str = "high",
+    title: str = "No escalation path",
+    review_status: str | None = None,
+) -> uuid.UUID:
+    columns = "analysis_id, position, kind, severity, title, description, suggested_question"
+    values = ":analysis_id, :position, :kind, :severity, :title, 'd', 'q'"
+    parameters: dict[str, object] = {
+        "analysis_id": analysis_id,
+        "position": position,
+        "kind": kind,
+        "severity": severity,
+        "title": title,
+    }
+    if review_status:
+        columns += ", review_status"
+        values += ", :review_status"
+        parameters["review_status"] = review_status
+    async with engine.begin() as connection:
+        result = await connection.execute(
+            text(f"INSERT INTO findings ({columns}) VALUES ({values}) RETURNING id"),  # noqa: S608
+            parameters,
+        )
+        return result.scalar_one()
+
+
+async def add_citation(engine: AsyncEngine, finding_id: uuid.UUID, chunk_id: uuid.UUID) -> None:
+    async with engine.begin() as connection:
+        await connection.execute(
+            text(
+                "INSERT INTO finding_citations (finding_id, chunk_id, section_label, quote) "
+                "VALUES (:finding_id, :chunk_id, '3.1', 'Clause text')"
+            ),
+            {"finding_id": finding_id, "chunk_id": chunk_id},
+        )
+
+
+async def first_chunk_id(engine: AsyncEngine) -> uuid.UUID:
+    async with engine.connect() as connection:
+        return (await connection.execute(text("SELECT id FROM document_chunks"))).scalar_one()
+
+
+async def seed_report(engine: AsyncEngine) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID]:
+    """One user with a document, a chunk, an analysis, a finding and a citation.
+    Returns the user, document and finding ids."""
+    owner_id = await add_user(engine)
+    document_id = await add_document(engine, owner_id)
+    await add_chunk(engine, document_id, owner_id)
+    analysis_id = await add_analysis(engine, document_id, owner_id, "succeeded")
+    finding_id = await add_finding(engine, analysis_id)
+    await add_citation(engine, finding_id, await first_chunk_id(engine))
+    return owner_id, document_id, finding_id
+
+
+async def test_new_analysis_and_finding_get_the_documented_defaults(
+    migrated_engine: AsyncEngine,
+) -> None:
+    owner_id = await add_user(migrated_engine)
+    document_id = await add_document(migrated_engine, owner_id)
+    analysis_id = await add_analysis(migrated_engine, document_id, owner_id)
+    await add_finding(migrated_engine, analysis_id)
+
+    async with migrated_engine.connect() as connection:
+        analysis = (
+            await connection.execute(
+                text("SELECT status, findings_count, completed_at, summary FROM analyses")
+            )
+        ).one()
+        review_status = (
+            await connection.execute(text("SELECT review_status FROM findings"))
+        ).scalar_one()
+
+    assert tuple(analysis) == ("queued", 0, None, None)
+    assert review_status == "open"
+
+
+async def test_analysis_rejects_an_unknown_status(migrated_engine: AsyncEngine) -> None:
+    owner_id = await add_user(migrated_engine)
+    document_id = await add_document(migrated_engine, owner_id)
+
+    with pytest.raises(IntegrityError):
+        await add_analysis(migrated_engine, document_id, owner_id, "cancelled")
+
+
+@pytest.mark.parametrize("status", ["queued", "running", "succeeded", "failed"])
+async def test_analysis_accepts_every_documented_status(
+    migrated_engine: AsyncEngine, status: str
+) -> None:
+    owner_id = await add_user(migrated_engine)
+    document_id = await add_document(migrated_engine, owner_id)
+
+    await add_analysis(migrated_engine, document_id, owner_id, status)
+
+    assert await count_rows(migrated_engine, "analyses") == 1
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"kind": "wrong"},
+        {"severity": "critical"},
+        {"review_status": "resolved"},
+        {"title": "x" * 161},
+    ],
+)
+async def test_finding_check_constraints_reject_bad_values(
+    migrated_engine: AsyncEngine, overrides: dict[str, str]
+) -> None:
+    owner_id = await add_user(migrated_engine)
+    document_id = await add_document(migrated_engine, owner_id)
+    analysis_id = await add_analysis(migrated_engine, document_id, owner_id, "succeeded")
+
+    with pytest.raises(IntegrityError):
+        await add_finding(migrated_engine, analysis_id, **overrides)
+
+
+async def test_finding_title_of_160_characters_is_allowed(migrated_engine: AsyncEngine) -> None:
+    owner_id = await add_user(migrated_engine)
+    document_id = await add_document(migrated_engine, owner_id)
+    analysis_id = await add_analysis(migrated_engine, document_id, owner_id, "succeeded")
+
+    await add_finding(migrated_engine, analysis_id, title="x" * 160)
+
+    assert await count_rows(migrated_engine, "findings") == 1
+
+
+@pytest.mark.parametrize("active", ["queued", "running"])
+@pytest.mark.parametrize("other", ["queued", "running"])
+async def test_a_second_active_analysis_for_one_document_is_rejected(
+    migrated_engine: AsyncEngine, active: str, other: str
+) -> None:
+    owner_id = await add_user(migrated_engine)
+    document_id = await add_document(migrated_engine, owner_id)
+    await add_analysis(migrated_engine, document_id, owner_id, active)
+
+    with pytest.raises(IntegrityError):
+        await add_analysis(migrated_engine, document_id, owner_id, other)
+
+
+@pytest.mark.parametrize("finished", ["succeeded", "failed"])
+async def test_a_new_analysis_is_allowed_once_the_earlier_one_has_finished(
+    migrated_engine: AsyncEngine, finished: str
+) -> None:
+    owner_id = await add_user(migrated_engine)
+    document_id = await add_document(migrated_engine, owner_id)
+    await add_analysis(migrated_engine, document_id, owner_id, finished)
+
+    await add_analysis(migrated_engine, document_id, owner_id, "queued")
+
+    assert await count_rows(migrated_engine, "analyses") == 2
+
+
+async def test_finished_analyses_do_not_limit_each_other(migrated_engine: AsyncEngine) -> None:
+    owner_id = await add_user(migrated_engine)
+    document_id = await add_document(migrated_engine, owner_id)
+
+    for status in ("succeeded", "succeeded", "failed", "failed"):
+        await add_analysis(migrated_engine, document_id, owner_id, status)
+
+    assert await count_rows(migrated_engine, "analyses") == 4
+
+
+async def test_two_documents_can_each_have_an_active_analysis(
+    migrated_engine: AsyncEngine,
+) -> None:
+    owner_id = await add_user(migrated_engine)
+    first = await add_document(migrated_engine, owner_id, sha256="a" * 64)
+    second = await add_document(migrated_engine, owner_id, sha256="b" * 64)
+
+    await add_analysis(migrated_engine, first, owner_id, "running")
+    await add_analysis(migrated_engine, second, owner_id, "running")
+
+    assert await count_rows(migrated_engine, "analyses") == 2
+
+
+async def test_an_active_analysis_that_finishes_frees_the_slot(
+    migrated_engine: AsyncEngine,
+) -> None:
+    owner_id = await add_user(migrated_engine)
+    document_id = await add_document(migrated_engine, owner_id)
+    analysis_id = await add_analysis(migrated_engine, document_id, owner_id, "running")
+    async with migrated_engine.begin() as connection:
+        await connection.execute(
+            text("UPDATE analyses SET status = 'succeeded' WHERE id = :id"), {"id": analysis_id}
+        )
+
+    await add_analysis(migrated_engine, document_id, owner_id, "running")
+
+    assert await count_rows(migrated_engine, "analyses") == 2
+
+
+async def test_finding_position_is_unique_within_an_analysis(
+    migrated_engine: AsyncEngine,
+) -> None:
+    owner_id = await add_user(migrated_engine)
+    document_id = await add_document(migrated_engine, owner_id)
+    analysis_id = await add_analysis(migrated_engine, document_id, owner_id, "succeeded")
+    other_id = await add_analysis(migrated_engine, document_id, owner_id, "succeeded")
+    await add_finding(migrated_engine, analysis_id, position=0)
+
+    await add_finding(migrated_engine, other_id, position=0)
+    with pytest.raises(IntegrityError):
+        await add_finding(migrated_engine, analysis_id, position=0)
+
+
+async def test_deleting_a_document_deletes_its_analyses_findings_and_citations(
+    migrated_engine: AsyncEngine,
+) -> None:
+    _, document_id, _ = await seed_report(migrated_engine)
+
+    async with migrated_engine.begin() as connection:
+        await connection.execute(text("DELETE FROM documents WHERE id = :id"), {"id": document_id})
+
+    for table in ("analyses", "findings", "finding_citations"):
+        assert await count_rows(migrated_engine, table) == 0
+
+
+async def test_deleting_a_user_deletes_their_analyses_findings_and_citations(
+    migrated_engine: AsyncEngine,
+) -> None:
+    owner_id, _, _ = await seed_report(migrated_engine)
+
+    async with migrated_engine.begin() as connection:
+        await connection.execute(text("DELETE FROM users WHERE id = :id"), {"id": owner_id})
+
+    for table in ("analyses", "findings", "finding_citations"):
+        assert await count_rows(migrated_engine, table) == 0
+
+
+async def test_deleting_a_finding_deletes_its_citations_but_not_the_chunk(
+    migrated_engine: AsyncEngine,
+) -> None:
+    _, _, finding_id = await seed_report(migrated_engine)
+
+    async with migrated_engine.begin() as connection:
+        await connection.execute(text("DELETE FROM findings WHERE id = :id"), {"id": finding_id})
+
+    assert await count_rows(migrated_engine, "finding_citations") == 0
+    assert await count_rows(migrated_engine, "document_chunks") == 1
+
+
+async def test_deleting_a_chunk_deletes_its_citations_but_keeps_the_finding(
+    migrated_engine: AsyncEngine,
+) -> None:
+    # This is what a soft delete of a document does to a report: the quotes go with the chunks,
+    # while the finding's own text stays until the delete service removes the analysis (ADR-042).
+    await seed_report(migrated_engine)
+
+    async with migrated_engine.begin() as connection:
+        await connection.execute(text("DELETE FROM document_chunks"))
+
+    assert await count_rows(migrated_engine, "finding_citations") == 0
+    assert await count_rows(migrated_engine, "findings") == 1

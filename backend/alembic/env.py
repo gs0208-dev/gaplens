@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.ai import models as ai_models
 from app.core.config import get_settings
+from app.modules.analysis import models as analysis_models
 from app.modules.audit import models as audit_models
 from app.modules.auth import models as auth_models
 from app.modules.chat import models as chat_models
@@ -21,7 +22,14 @@ if config.config_file_name is not None and config.attributes.get("configure_logg
 
 # Importing the model modules is what registers their tables on the shared metadata. Listing
 # them here keeps the imports used, so a new module is added in one visible place.
-MODEL_MODULES = (ai_models, audit_models, auth_models, chat_models, document_models)
+MODEL_MODULES = (
+    ai_models,
+    analysis_models,
+    audit_models,
+    auth_models,
+    chat_models,
+    document_models,
+)
 target_metadata = auth_models.Base.metadata
 
 
