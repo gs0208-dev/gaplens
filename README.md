@@ -84,7 +84,7 @@ make frontend-dev           # http://localhost:5173, proxies /api to the backend
 
 - [x] Sprint 0: Foundation (repo, Docker Compose, health endpoints, CI)
 - [x] Sprint 1: Auth
-- [ ] Sprint 2: RAG core
+- [x] Sprint 2: RAG core
 - [ ] Sprint 3: Gap report and UI
 - [ ] Sprint 4: Security hardening, evaluation, deploy
 
