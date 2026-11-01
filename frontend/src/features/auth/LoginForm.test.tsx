@@ -1,7 +1,7 @@
 import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { problem, stubApi, tokenResponse } from '@/test/fetch'
+import { DOCUMENT_LIST, emptyDocumentList, problem, stubApi, tokenResponse } from '@/test/fetch'
 import { renderApp, resetClientState } from '@/test/render'
 
 const REFRESH = 'POST /api/v1/auth/refresh'
@@ -11,7 +11,7 @@ const noSession = () => problem(401, 'invalid_refresh_token', 'Your session is n
 beforeEach(resetClientState)
 
 async function openLoginPage(extraRoutes: Parameters<typeof stubApi>[0] = {}) {
-  const fake = stubApi({ [REFRESH]: noSession, ...extraRoutes })
+  const fake = stubApi({ [DOCUMENT_LIST]: emptyDocumentList, [REFRESH]: noSession, ...extraRoutes })
   const page = renderApp('/login')
   await screen.findByRole('heading', { name: 'Sign in' })
   return { fake, ...page }

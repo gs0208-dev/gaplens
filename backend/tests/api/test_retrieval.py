@@ -7,9 +7,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from app.core.config import get_settings
-from app.modules.documents.errors import DocumentNotFound
+from app.modules.documents.errors import DocumentNotFound, DocumentNotReady
 from app.modules.retrieval import repository
-from app.modules.retrieval.errors import DocumentNotReady
 from app.modules.retrieval.service import retrieve
 from tests.api.helpers import Account, embedded_text_of_chunk, upload, user_id
 from tests.fakes.embedder import FakeEmbedder, vector_for

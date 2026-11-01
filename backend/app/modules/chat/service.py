@@ -2,6 +2,7 @@ import logging
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,11 +11,12 @@ from app.ai.client import LLMClient
 from app.ai.prompts import CHAT_PROMPT_VERSION, PromptSource, build_chat_messages, load_prompt
 from app.ai.schemas import ChatAnswerOut, Turn
 from app.core.config import get_settings
-from app.core.pagination import decode_cursor, encode_cursor
+from app.core.pagination import decode_cursor, split_page
 from app.modules.chat import repository
 from app.modules.chat.errors import ThreadNotFound
 from app.modules.chat.grounding import VerifiedAnswer, not_found, verify_answer
 from app.modules.chat.models import ChatMessage
+from app.modules.documents import service as documents_service
 from app.modules.ingestion.embedder import Embedder
 from app.modules.retrieval import service as retrieval_service
 
@@ -144,12 +146,32 @@ async def list_messages(
     if thread is None:
         raise ThreadNotFound
     after = decode_cursor(cursor) if cursor else None
-    # One extra row tells whether another page exists (docs/database.md, rule 4).
     rows = await repository.list_messages(
         session, owner_id=owner_id, thread_id=thread_id, after=after, limit=limit + 1
     )
-    items = rows[:limit]
-    next_cursor = (
-        encode_cursor(items[-1].created_at, items[-1].id) if len(rows) > limit and items else None
-    )
+    items, next_cursor = split_page(rows, limit, lambda message: (message.created_at, message.id))
     return MessageList(items=items, next_cursor=next_cursor)
+
+
+@dataclass(frozen=True)
+class ThreadList:
+    items: list[Any]
+    next_cursor: str | None
+
+
+async def list_threads(
+    session: AsyncSession,
+    *,
+    owner_id: uuid.UUID,
+    document_id: uuid.UUID,
+    cursor: str | None,
+    limit: int,
+) -> ThreadList:
+    # A missing, foreign or deleted document is the same 404 as everywhere else.
+    await documents_service.get_document(session, owner_id=owner_id, document_id=document_id)
+    after = decode_cursor(cursor) if cursor else None
+    rows = await repository.list_threads(
+        session, owner_id=owner_id, document_id=document_id, after=after, limit=limit + 1
+    )
+    items, next_cursor = split_page(rows, limit, lambda thread: (thread.updated_at, thread.id))
+    return ThreadList(items=items, next_cursor=next_cursor)

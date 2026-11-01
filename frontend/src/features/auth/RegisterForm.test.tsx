@@ -1,7 +1,14 @@
 import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { problem, stubApi, tokenResponse, USER } from '@/test/fetch'
+import {
+  DOCUMENT_LIST,
+  emptyDocumentList,
+  problem,
+  stubApi,
+  tokenResponse,
+  USER,
+} from '@/test/fetch'
 import { renderApp, resetClientState } from '@/test/render'
 
 const REFRESH = 'POST /api/v1/auth/refresh'
@@ -13,7 +20,7 @@ const registered = () => ({ status: 201, body: { user: USER } })
 beforeEach(resetClientState)
 
 async function openRegisterPage(extraRoutes: Parameters<typeof stubApi>[0] = {}) {
-  const fake = stubApi({ [REFRESH]: noSession, ...extraRoutes })
+  const fake = stubApi({ [DOCUMENT_LIST]: emptyDocumentList, [REFRESH]: noSession, ...extraRoutes })
   const page = renderApp('/register')
   await screen.findByRole('heading', { name: 'Create an account' })
   return { fake, ...page }

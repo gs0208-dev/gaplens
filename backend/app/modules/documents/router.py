@@ -7,6 +7,7 @@ from fastapi import (
     Depends,
     File,
     Form,
+    Query,
     Request,
     Response,
     UploadFile,
@@ -18,7 +19,14 @@ from app.api.deps import CurrentUser
 from app.core.rate_limit import UPLOAD_LIMIT, limiter, user_key
 from app.db.session import get_session, get_session_factory
 from app.modules.documents import service
-from app.modules.documents.schemas import DocumentOut, DocumentResponse
+from app.modules.documents.schemas import (
+    ChunkList,
+    ChunkOut,
+    DocumentOut,
+    DocumentPage,
+    DocumentResponse,
+    DocumentSummary,
+)
 from app.modules.ingestion import service as ingestion_service
 from app.modules.ingestion.embedder import Embedder, get_embedder
 
@@ -60,6 +68,22 @@ async def upload_document(
     return response
 
 
+@router.get("")
+async def list_documents(
+    current_user: CurrentUser,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    cursor: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> DocumentPage:
+    page = await service.list_documents(
+        session, owner_id=current_user.id, cursor=cursor, limit=limit
+    )
+    return DocumentPage(
+        items=[DocumentSummary.model_validate(row) for row in page.items],
+        next_cursor=page.next_cursor,
+    )
+
+
 @router.get("/{document_id}")
 async def get_document(
     document_id: uuid.UUID,
@@ -70,6 +94,16 @@ async def get_document(
         session, owner_id=current_user.id, document_id=document_id
     )
     return DocumentResponse(document=DocumentOut.model_validate(document))
+
+
+@router.get("/{document_id}/chunks")
+async def list_chunks(
+    document_id: uuid.UUID,
+    current_user: CurrentUser,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> ChunkList:
+    rows = await service.list_chunks(session, owner_id=current_user.id, document_id=document_id)
+    return ChunkList(items=[ChunkOut.model_validate(row) for row in rows])
 
 
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)

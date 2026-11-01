@@ -76,7 +76,8 @@ Goal: upload a document, see it processed, ask questions and get cited answers (
 | S2-5a Delete document | `DELETE /documents/{id}` soft deletes for the owner (`204`); the document then reads as `404`, its stored text is removed, a `document.delete` audit event is written, and the same file can be uploaded again; another user's id gives the same `404` as a missing one. Added after S2-5 left failed documents blocking re-upload (ADR-035, ADR-036) |
 | S2-6 Retrieval | Scoped query returns top-k with scores; test proves another user's document returns nothing |
 | S2-7 Chat endpoint | Grounded answers with verified citations; not-found path works; fake LLM used in tests; `llm_calls` row written |
-| S2-8 Documents and chat UI (minimal) | Upload dialog, documents table with status polling, document workspace with chat tab |
+| S2-8a Document and thread reads | `GET /documents` (keyset pages, newest first), `GET /documents/{id}/chunks` (ready documents, reading order) and `GET /documents/{id}/threads` (most recently used first), all scoped to the owner with the same 404 for missing, foreign and deleted. Added so the UI in S2-8b has data to show; `docs/api.md` already listed them |
+| S2-8b Documents and chat UI (minimal) | Upload dialog, documents table with status polling, document workspace with chat tab |
 
 Evals: retrieval recall@k on `evals/golden/qa.jsonl` recorded.
 

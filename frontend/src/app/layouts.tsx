@@ -1,8 +1,9 @@
 import { LogOut } from 'lucide-react'
-import { Outlet } from 'react-router'
+import { Outlet, useMatches } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { useCurrentUser, useLogout } from '@/features/auth/hooks'
+import { cn } from '@/lib/utils'
 
 /** Sign-in and register: one column, product name as text, no illustration. */
 export function AuthLayout() {
@@ -18,6 +19,11 @@ export function AuthLayout() {
 export function AppLayout() {
   const user = useCurrentUser()
   const logout = useLogout()
+  // Lists and settings keep to 1120 px; a route can ask for the full width with handle.fullWidth.
+  const fullWidth = useMatches().some(
+    (match) =>
+      typeof match.handle === 'object' && match.handle !== null && 'fullWidth' in match.handle,
+  )
 
   return (
     <div className="min-h-screen">
@@ -36,7 +42,7 @@ export function AppLayout() {
           </Button>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-content px-4 py-8">
+      <main className={cn('mx-auto w-full px-4 py-8', !fullWidth && 'max-w-content')}>
         <Outlet />
       </main>
     </div>

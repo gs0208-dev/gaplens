@@ -69,14 +69,14 @@ Rate limits: login is 5 requests per minute per IP, and an email address is bloc
 | Method | Path | Notes |
 |---|---|---|
 | POST | `/documents` | `multipart/form-data` with `file` and optional `title`. `202 { document }` |
-| GET | `/documents` | Paginated list of `{ id, title, status, page_count, chunk_count, created_at }` |
+| GET | `/documents` | Paginated list of `{ id, title, status, page_count, chunk_count, created_at }`, newest first |
 | GET | `/documents/{id}` | Full document metadata including `status` and `error_message` |
-| GET | `/documents/{id}/chunks` | Ordered chunks `{ id, chunk_index, section_label, heading, content, page_start }` for the source pane (document must be `ready`) |
+| GET | `/documents/{id}/chunks` | Ordered chunks `{ id, chunk_index, section_label, heading, content, page_start }` for the source pane (document must be `ready`), all in one response |
 | DELETE | `/documents/{id}` | `204`; soft delete |
 
 `document`: `{ id, title, filename, mime_type, size_bytes, status, error_message, page_count, chunk_count, created_at }`.
 
-Built so far: `POST /documents`, `GET /documents/{id}` and `DELETE /documents/{id}`. The list and chunks endpoints are not built yet and no sprint story owns them.
+All five document endpoints are built.
 
 Upload (`POST /documents`): needs `Authorization: Bearer <access token>`. The body is `multipart/form-data` with `file` (required) and `title` (optional, trimmed, at most 200 characters, default is the filename without its extension). Unknown form fields are ignored; a missing `file` or an over-long `title` is `422 validation_error`. The response is `202 { document }` with `status: "uploaded"`, built before processing starts. Processing then runs in the background (see Status below). The original file is not kept, only its metadata and SHA-256.
 
@@ -103,6 +103,10 @@ Get (`GET /documents/{id}`): needs the same token. A document that does not exis
 
 Delete (`DELETE /documents/{id}`): needs the same token. `204` with no body when the owner's document was deleted. It is a soft delete: the document row (title, hash and other metadata, no document text) is kept for 30 days and then purged, and the stored chunks are removed at once. The document then reads as `404`, and the same file can be uploaded again straight away. A document that does not exist, belongs to someone else, or is already deleted gets the same `404 document_not_found`, so a second delete is a `404`. It works in every status, including `processing`: the background task then stores nothing. A `document.delete` audit event is written in the same transaction.
 
+List (`GET /documents`): needs the same token. The caller's documents that are not deleted, newest first, as `{ items, next_cursor }`. `?limit` is 1 to 100 (default 20) and `?cursor` is the opaque `next_cursor` of the previous page (a bad one is `422 invalid_cursor`, a limit outside the range is `422 validation_error`). `next_cursor` is `null` on the last page. An item is `{ id, title, status, page_count, chunk_count, created_at }`; the client polls this list every 2 seconds while any item is `uploaded` or `processing`. Documents of other users and deleted documents never appear.
+
+Chunks (`GET /documents/{id}/chunks`): needs the same token. `{ items }` with every chunk of the document in reading order. It is deliberately not paginated: the source pane needs the whole text, and a document cannot have more than 1000 chunks (`MAX_CHUNKS_PER_DOCUMENT`). A document that is not `ready` is `409 document_not_ready`. A document that does not exist, belongs to someone else, or is deleted is the same `404 document_not_found`.
+
 Status. `status` moves `uploaded`, `processing`, `ready` or `failed`, and the client polls `GET /documents/{id}` every 2 seconds until it is `ready` or `failed`. `ready` means the document has been split into `chunk_count` chunks and each has a stored embedding. `failed` always has one of these fixed `error_message` texts, never text from the document or from an exception:
 
 | `error_message` | Cause |
@@ -119,18 +123,20 @@ A failed document stays failed, and the original file is not kept. While it exis
 | Method | Path | Notes |
 |---|---|---|
 | POST | `/documents/{id}/chat` | Body `{ question, thread_id? }`. Creates a thread if none is given. `200 { thread_id, message }` |
-| GET | `/documents/{id}/threads` | Paginated threads |
+| GET | `/documents/{id}/threads` | Paginated threads, most recently used first |
 | GET | `/threads/{id}/messages` | Messages in order |
 
 `message`: `{ id, role, content, grounded, citations: [{ chunk_id, section_label, quote }], created_at }`. `question` is 1 to 1000 characters (trimmed).
 
-Built so far: `POST /documents/{id}/chat` and `GET /threads/{id}/messages`. The threads list has no story yet.
+All three chat endpoints are built.
 
 Chat (`POST /documents/{id}/chat`): needs `Authorization: Bearer <access token>`. Body `{ "question": "...", "thread_id": "..." }`, unknown fields are `422`. The document must be the user's, not deleted, and `ready`: a missing, foreign or deleted document is `404 document_not_found`, one that is still processing or failed is `409 document_not_ready`. `thread_id` is optional; a thread that is missing, someone else's, or belongs to another document is `404 thread_not_found`. Without `thread_id` a new thread is created, titled with the start of the question. At most 30 questions per hour per user (`429 rate_limited`).
 
 The reply is `200 { thread_id, message }` where `message` is the assistant message. Either the answer is grounded (`grounded: true`, at least one citation, each citation a real chunk of this document with its section label and a quote that is the start of the stored chunk text), or the document does not answer and the content is exactly `This is not found in the document.` with `grounded: false` and no citations. The model's own wording is only ever shown for a grounded answer. Questions are answered from the best matching chunks of the document only. When the optional score cutoff leaves no chunk, the model is not called.
 
 If the model cannot be used the answer is `503`: `llm_unavailable` (no key configured, provider errors, rate limits after retries), `llm_timeout`, or `llm_invalid_output` (a reply that still did not match the format after one repair attempt, a refusal, or a cut-off reply). Nothing is stored in the conversation when this happens, and the attempt is recorded in `llm_calls`.
+
+Threads (`GET /documents/{id}/threads`): needs the same token. The caller's conversations about one document, most recently used first (a new answer moves a thread to the top), as `{ items, next_cursor }` with `?limit` and `?cursor` as for the documents list. An item is `{ id, title, created_at, updated_at }`; the title is the start of the first question. A document that does not exist, belongs to someone else, or is deleted is the same `404 document_not_found`.
 
 Messages (`GET /threads/{id}/messages`): needs the same token. Messages oldest first as `{ items, next_cursor }`, `?limit` (default 20, at most 100) and `?cursor` (opaque, from the previous page; a bad one is `422 invalid_cursor`). Another user's or a missing thread is `404 thread_not_found`.
 

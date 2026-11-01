@@ -5,6 +5,8 @@ export interface RecordedRequest {
   method: string
   headers: Headers
   body: unknown
+  /** The parts of a multipart upload, by field name. Files are kept as File objects. */
+  form?: Record<string, FormDataEntryValue>
 }
 
 export interface FakeResponse {
@@ -34,6 +36,7 @@ export function stubFetch(handler: Handler): FakeFetch {
       method: init?.method ?? 'GET',
       headers: new Headers(init?.headers),
       body: raw === undefined ? undefined : JSON.parse(raw),
+      form: init?.body instanceof FormData ? Object.fromEntries(init.body.entries()) : undefined,
     }
     requests.push(request)
     const reply = await handler(request)
@@ -53,6 +56,9 @@ export function stubFetch(handler: Handler): FakeFetch {
 
 type Routes = Record<string, Handler>
 
+/** Requests that no test planned for. setup.ts fails the test if any were made. */
+export const unplannedRequests: string[] = []
+
 /**
  * Answers by "METHOD /path". A request nobody planned for fails the test loudly, so a screen
  * cannot quietly call an endpoint the test never mentioned.
@@ -61,7 +67,10 @@ export function stubApi(routes: Routes): FakeFetch {
   return stubFetch((request) => {
     const handler = routes[`${request.method} ${request.url}`]
     if (handler === undefined) {
-      throw new Error(`Unexpected request: ${request.method} ${request.url}`)
+      const description = `${request.method} ${request.url}`
+      // The app may catch this error and show an error screen, so it is also remembered here.
+      unplannedRequests.push(description)
+      throw new Error(`Unexpected request: ${description}`)
     }
     return handler(request)
   })
@@ -97,4 +106,11 @@ export const USER = {
 
 export function tokenResponse(accessToken = 'access-token-1'): FakeResponse {
   return { body: { access_token: accessToken, expires_in: 900, user: USER } }
+}
+
+/** The first page of the documents list, which any signed-in screen under /documents asks for. */
+export const DOCUMENT_LIST = 'GET /api/v1/documents?limit=20'
+
+export function emptyDocumentList(): FakeResponse {
+  return { body: { items: [], next_cursor: null } }
 }

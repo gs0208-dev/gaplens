@@ -52,7 +52,7 @@ Neutral scale (cool gray) with one accent (a deep teal) keeps the tool serious a
 | `severity-high`, `severity-medium`, `severity-low` | Finding severity (text, border and subtle background) |
 | `success`, `warning`, `danger`, `info` | Status messages and badges |
 
-Values in use (light theme, set in S1-7, provisional until S4-5). Only the tokens the screens use so far are defined; `severity-*`, `success`, `warning` and `info` are added, with their contrast checked, in the story that first needs them. `danger` is the one status color defined so far.
+Values in use (light theme, set in S1-7, provisional until S4-5). Only the tokens the screens use so far are defined; `severity-*`, `warning` and `info` are added, with their contrast checked, in the story that first needs them. `danger` and `success` are the status colors defined so far.
 
 | Token | Value | Checked against |
 |---|---|---|
@@ -67,6 +67,7 @@ Values in use (light theme, set in S1-7, provisional until S4-5). Only the token
 | `accent-foreground` | `#ffffff` | label on `accent` |
 | `accent-subtle` | `#e1f1f0` | `accent` text on it 5.4:1 |
 | `danger` | `#b3261e` | text on `surface` 6.54:1, on `background` 6.15:1 |
+| `success` | `#17663a` | text on `surface` 7.00:1, on `background` 6.59:1, on `surface-muted` 6.18:1 (added in S2-8b for the Ready badge) |
 
 The shadcn/ui components use their own color class names. `src/styles/index.css` maps them to our tokens, so read `bg-primary`, `text-primary` and `ring-ring` as `accent`; `bg-accent` as `accent-subtle` (shadcn uses "accent" for hover and selected backgrounds); `border-input` as `border-strong`; `bg-destructive` and `text-destructive` as `danger`; `text-muted-foreground` as `foreground-muted`. Generated components are changed only to follow this document (no shadows, the 2 px focus ring with a 2 px offset).
 
@@ -96,7 +97,7 @@ Use these shadcn/ui components: Button, Input, Textarea, Label, Form, Dialog, Al
 Rules:
 - Primary button: one per view. Destructive actions use a destructive variant and an AlertDialog with the resource name.
 - Tables for lists of documents. Findings are a list of expandable rows, not cards.
-- Badges for status and severity always contain text. Never use color alone.
+- Badges for status and severity always contain text. Never use color alone. Document status: Queued and Processing (spinner icon, neutral outline), Ready (check icon, `success`), Failed (alert icon, `danger`).
 - Forms: label above the input, helper text below, inline error text under the field, error summary at the top for submit failures.
 - Toasts for confirmations only. Errors that need action stay inline.
 
@@ -112,16 +113,16 @@ Rules:
 |---|---|
 | Sign in, Register | Single column form, 400 px wide, product name as text, no illustration |
 | Documents | Table: title, status badge, pages, uploaded date, actions menu. Upload button top right. Empty state: one sentence and the upload button |
-| Upload dialog | File drop area plus a file button, accepted types and size stated, progress, validation errors inline |
+| Upload dialog | File drop area plus a file button, accepted types and size stated, an "Uploading" state while the request runs (a percentage is not possible with `fetch`), validation errors inline. A file over 5 MB is refused in the browser without a request. States that document text is stored in the account and excerpts are sent to Anthropic when chatting |
 | Document workspace | Header with title and status; left document pane; right tabs Report and Chat |
 | Report tab | Summary, counts by severity, filter by kind and severity, findings list. Each finding: title, kind and severity badges, description, evidence quotes with section labels (click scrolls and highlights in the document pane), suggested client question with copy button, status control (open, confirmed, dismissed) |
-| Chat tab | Message list, input at the bottom, answers with numbered citations that highlight the source; not-found answers styled as a neutral note |
+| Chat tab | Message list (a live region), input at the bottom, answers with numbered sources (section label and quote) that mark and scroll to the section in the document pane; not-found answers styled as a neutral note; the last conversation is restored on open; "New conversation" starts another. Errors stay inline with the request id and a retry |
 | Settings | Account email, sign out, delete account (AlertDialog) |
 
 ## States
 
 - Loading: skeletons that match the final layout. A spinner only inside a button during a submit.
-- Processing documents: a progress row with the current stage in words (extracting, chunking, embedding).
+- Processing documents: the status in words with a spinner icon (Queued, Processing), refreshed every 2 seconds. The API reports only the status, not the stage, so the stage words (extracting, chunking, embedding) wait for an API change.
 - Empty: one plain sentence and the next action.
 - Error: what happened, what to do, the request id in small text, a retry button where it makes sense.
 - Long content: truncate with an expand control; never break the layout.
@@ -133,7 +134,7 @@ Rules:
 - Name things the same way everywhere: "document", "report", "finding", "suggested question".
 - Good: "Upload a PDF or text file up to 5 MB." Bad: "Drop your files and let the magic happen!"
 - Good: "The report could not be generated. Try again in a few minutes." Bad: "Oops! Something went wrong."
-- Not-found chat answer: "This is not covered in the document." followed by what the document does say about the nearest topic, if anything.
+- Not-found chat answer: the API's fixed text, "This is not found in the document.", shown as a neutral note (Info icon, no error color). Showing what the document says about the nearest topic is not built, because the API returns no such text (ADR-039).
 
 ## Motion
 

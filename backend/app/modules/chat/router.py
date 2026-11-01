@@ -9,7 +9,14 @@ from app.api.deps import CurrentUser
 from app.core.rate_limit import CHAT_LIMIT, limiter, user_key
 from app.db.session import get_session
 from app.modules.chat import service
-from app.modules.chat.schemas import ChatRequest, ChatResponse, MessageOut, MessagePage
+from app.modules.chat.schemas import (
+    ChatRequest,
+    ChatResponse,
+    MessageOut,
+    MessagePage,
+    ThreadOut,
+    ThreadPage,
+)
 from app.modules.ingestion.embedder import Embedder, get_embedder
 
 router = APIRouter(tags=["chat"])
@@ -53,4 +60,20 @@ async def list_messages(
     return MessagePage(
         items=[MessageOut.model_validate(message) for message in page.items],
         next_cursor=page.next_cursor,
+    )
+
+
+@router.get("/documents/{document_id}/threads")
+async def list_threads(
+    document_id: uuid.UUID,
+    current_user: CurrentUser,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    cursor: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> ThreadPage:
+    page = await service.list_threads(
+        session, owner_id=current_user.id, document_id=document_id, cursor=cursor, limit=limit
+    )
+    return ThreadPage(
+        items=[ThreadOut.model_validate(row) for row in page.items], next_cursor=page.next_cursor
     )

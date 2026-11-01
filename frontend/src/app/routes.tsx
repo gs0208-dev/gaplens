@@ -1,5 +1,6 @@
 import { Navigate, type RouteObject } from 'react-router'
 
+import { DocumentPage } from '@/pages/DocumentPage'
 import { DocumentsPage } from '@/pages/DocumentsPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
@@ -24,7 +25,18 @@ export const routes: RouteObject[] = [
   {
     element: <RequireAuth />,
     children: [
-      { element: <AppLayout />, children: [{ path: '/documents', element: <DocumentsPage /> }] },
+      {
+        element: <AppLayout />,
+        children: [
+          { path: '/documents', element: <DocumentsPage /> },
+          // The workspace uses the full width (docs/design-system.md).
+          {
+            path: '/documents/:documentId',
+            element: <DocumentPage />,
+            handle: { fullWidth: true },
+          },
+        ],
+      },
     ],
   },
   { path: '/', element: <Navigate to="/documents" replace /> },

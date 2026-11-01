@@ -1,7 +1,8 @@
 import uuid
 from datetime import datetime
+from typing import Any
 
-from sqlalchemy import func, insert, select, tuple_, update
+from sqlalchemy import Row, func, insert, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.chat.models import ChatMessage, ChatThread
@@ -86,3 +87,26 @@ async def list_messages(
         query.order_by(ChatMessage.created_at, ChatMessage.id).limit(limit)
     )
     return list(result.scalars())
+
+
+async def list_threads(
+    session: AsyncSession,
+    *,
+    owner_id: uuid.UUID,
+    document_id: uuid.UUID,
+    after: tuple[datetime, uuid.UUID] | None,
+    limit: int,
+) -> list[Row[*tuple[Any, ...]]]:
+    """The threads of one document, most recently used first, after the cursor.
+
+    Served by chat_threads_document_updated_idx (document_id, updated_at DESC).
+    """
+    query = select(
+        ChatThread.id, ChatThread.title, ChatThread.created_at, ChatThread.updated_at
+    ).where(ChatThread.document_id == document_id, ChatThread.owner_id == owner_id)
+    if after is not None:
+        query = query.where(tuple_(ChatThread.updated_at, ChatThread.id) < tuple_(*after))
+    result = await session.execute(
+        query.order_by(ChatThread.updated_at.desc(), ChatThread.id.desc()).limit(limit)
+    )
+    return list(result.all())

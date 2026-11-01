@@ -41,3 +41,17 @@ class ChatResponse(BaseModel):
 class MessagePage(BaseModel):
     items: list[MessageOut]
     next_cursor: str | None
+
+
+class ThreadOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    title: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ThreadPage(BaseModel):
+    items: list[ThreadOut]
+    next_cursor: str | None

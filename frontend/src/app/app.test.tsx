@@ -2,7 +2,14 @@ import { screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { useAuthStore } from '@/features/auth/store'
-import { problem, stubApi, tokenResponse, USER } from '@/test/fetch'
+import {
+  DOCUMENT_LIST,
+  emptyDocumentList,
+  problem,
+  stubApi,
+  tokenResponse,
+  USER,
+} from '@/test/fetch'
 import { renderApp, resetClientState } from '@/test/render'
 
 const REFRESH = 'POST /api/v1/auth/refresh'
@@ -13,7 +20,7 @@ beforeEach(resetClientState)
 
 describe('restoring the session on load', () => {
   it('shows the signed-in page when the refresh cookie is still good', async () => {
-    const fake = stubApi({ [REFRESH]: () => tokenResponse() })
+    const fake = stubApi({ [DOCUMENT_LIST]: emptyDocumentList, [REFRESH]: () => tokenResponse() })
 
     renderApp('/documents')
 
@@ -29,6 +36,7 @@ describe('restoring the session on load', () => {
       release = resolve
     })
     stubApi({
+      [DOCUMENT_LIST]: emptyDocumentList,
       [REFRESH]: async () => {
         await gate
         return tokenResponse()
@@ -44,7 +52,7 @@ describe('restoring the session on load', () => {
   })
 
   it('does not bounce through the login page while it waits, so a deep link survives a reload', async () => {
-    stubApi({ [REFRESH]: () => tokenResponse() })
+    stubApi({ [DOCUMENT_LIST]: emptyDocumentList, [REFRESH]: () => tokenResponse() })
 
     const { visited } = renderApp('/documents')
 
@@ -53,7 +61,7 @@ describe('restoring the session on load', () => {
   })
 
   it('goes to the login page without any error when there is no session', async () => {
-    stubApi({ [REFRESH]: noSession })
+    stubApi({ [DOCUMENT_LIST]: emptyDocumentList, [REFRESH]: noSession })
 
     renderApp('/documents')
 
@@ -64,7 +72,7 @@ describe('restoring the session on load', () => {
 
 describe('routes', () => {
   it('sends a signed-in user from the login page to the documents page', async () => {
-    stubApi({ [REFRESH]: () => tokenResponse() })
+    stubApi({ [DOCUMENT_LIST]: emptyDocumentList, [REFRESH]: () => tokenResponse() })
 
     renderApp('/login')
 
@@ -72,7 +80,7 @@ describe('routes', () => {
   })
 
   it('sends a signed-in user from the register page to the documents page', async () => {
-    stubApi({ [REFRESH]: () => tokenResponse() })
+    stubApi({ [DOCUMENT_LIST]: emptyDocumentList, [REFRESH]: () => tokenResponse() })
 
     renderApp('/register')
 
@@ -80,7 +88,7 @@ describe('routes', () => {
   })
 
   it('shows a not-found page for an unknown path', async () => {
-    stubApi({ [REFRESH]: noSession })
+    stubApi({ [DOCUMENT_LIST]: emptyDocumentList, [REFRESH]: noSession })
 
     renderApp('/no-such-page')
 
@@ -88,7 +96,7 @@ describe('routes', () => {
   })
 
   it('opens the login page at the root when signed out', async () => {
-    stubApi({ [REFRESH]: noSession })
+    stubApi({ [DOCUMENT_LIST]: emptyDocumentList, [REFRESH]: noSession })
 
     renderApp('/')
 
@@ -99,6 +107,7 @@ describe('routes', () => {
 describe('signing out', () => {
   it('ends the session, forgets the token and returns to the login page', async () => {
     const fake = stubApi({
+      [DOCUMENT_LIST]: emptyDocumentList,
       [REFRESH]: () => tokenResponse('token-to-forget'),
       [LOGOUT]: () => ({ status: 204 }),
     })
@@ -114,6 +123,7 @@ describe('signing out', () => {
 
   it('still signs out on this device when the server cannot be reached', async () => {
     stubApi({
+      [DOCUMENT_LIST]: emptyDocumentList,
       [REFRESH]: () => tokenResponse(),
       [LOGOUT]: () => ({ networkError: true }),
     })

@@ -100,7 +100,10 @@ async function send(
   accessToken: string | null,
 ): Promise<unknown> {
   const headers = new Headers()
-  if (options.body !== undefined) {
+  // A FormData body (a file upload) is sent as it is: the browser adds the multipart header and
+  // its boundary itself, and setting one by hand would break the upload.
+  const isForm = options.body instanceof FormData
+  if (options.body !== undefined && !isForm) {
     headers.set('Content-Type', 'application/json')
   }
   if (accessToken !== null) {
@@ -112,7 +115,7 @@ async function send(
     response = await fetch(`${API_PREFIX}${path}`, {
       method: options.method ?? 'GET',
       headers,
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      body: encodeBody(options.body),
       credentials: 'same-origin',
     })
   } catch {
@@ -146,6 +149,13 @@ async function send(
     })
   }
   return parsed.data
+}
+
+function encodeBody(body: unknown): BodyInit | undefined {
+  if (body === undefined) {
+    return undefined
+  }
+  return body instanceof FormData ? body : JSON.stringify(body)
 }
 
 async function toApiError(response: Response): Promise<ApiError> {

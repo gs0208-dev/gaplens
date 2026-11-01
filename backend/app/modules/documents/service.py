@@ -4,6 +4,7 @@ import unicodedata
 import uuid
 from dataclasses import dataclass
 from pathlib import PurePosixPath
+from typing import Any
 
 from fastapi import UploadFile
 from sqlalchemy.exc import IntegrityError
@@ -12,9 +13,10 @@ from starlette.concurrency import run_in_threadpool
 
 from app.core.config import get_settings
 from app.core.errors import FileTooLarge
+from app.core.pagination import decode_cursor, split_page
 from app.modules.audit.service import record_audit_event
 from app.modules.documents import repository
-from app.modules.documents.errors import DocumentNotFound, DuplicateDocument
+from app.modules.documents.errors import DocumentNotFound, DocumentNotReady, DuplicateDocument
 from app.modules.documents.models import Document
 from app.modules.ingestion.validate import InspectedUpload, UploadLimits, inspect_upload
 
@@ -146,3 +148,28 @@ async def delete_document(
         ip=ip,
     )
     await session.commit()
+
+
+@dataclass(frozen=True)
+class DocumentList:
+    items: list[Any]
+    next_cursor: str | None
+
+
+async def list_documents(
+    session: AsyncSession, *, owner_id: uuid.UUID, cursor: str | None, limit: int
+) -> DocumentList:
+    after = decode_cursor(cursor) if cursor else None
+    rows = await repository.list_documents(session, owner_id=owner_id, after=after, limit=limit + 1)
+    items, next_cursor = split_page(rows, limit, lambda row: (row.created_at, row.id))
+    return DocumentList(items=items, next_cursor=next_cursor)
+
+
+async def list_chunks(
+    session: AsyncSession, *, owner_id: uuid.UUID, document_id: uuid.UUID
+) -> list[Any]:
+    """The text of a ready document. A missing, foreign or deleted one is DocumentNotFound."""
+    document = await get_document(session, owner_id=owner_id, document_id=document_id)
+    if document.status != "ready":
+        raise DocumentNotReady
+    return await repository.list_chunks(session, owner_id=owner_id, document_id=document_id)

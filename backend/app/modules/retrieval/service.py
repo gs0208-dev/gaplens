@@ -4,9 +4,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.modules.documents import service as documents_service
+from app.modules.documents.errors import DocumentNotReady
 from app.modules.ingestion.embedder import Embedder, run_in_embedding_thread
 from app.modules.retrieval import repository
-from app.modules.retrieval.errors import DocumentNotReady
 from app.modules.retrieval.repository import RetrievedChunk
 
 

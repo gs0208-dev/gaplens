@@ -1,6 +1,7 @@
 import base64
 import binascii
 import uuid
+from collections.abc import Callable
 from datetime import datetime
 
 from app.core.errors import DomainError
@@ -27,3 +28,17 @@ def decode_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
         return datetime.fromisoformat(created_at), uuid.UUID(row_id)
     except (ValueError, binascii.Error) as error:
         raise InvalidCursor from error
+
+
+def split_page[T](
+    rows: list[T], limit: int, position: Callable[[T], tuple[datetime, uuid.UUID]]
+) -> tuple[list[T], str | None]:
+    """Cut `limit + 1` fetched rows down to a page and make the cursor for the next one.
+
+    One extra row is fetched to learn whether another page exists (docs/database.md, rule 4).
+    `position` says where in the sort order a row sits, which is what the cursor remembers.
+    """
+    items = rows[:limit]
+    if len(rows) <= limit or not items:
+        return items, None
+    return items, encode_cursor(*position(items[-1]))

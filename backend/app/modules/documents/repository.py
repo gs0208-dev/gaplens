@@ -1,6 +1,8 @@
 import uuid
+from datetime import datetime
+from typing import Any
 
-from sqlalchemy import delete, func, insert, select, update
+from sqlalchemy import Row, delete, func, insert, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.documents.models import Document, DocumentChunk
@@ -79,3 +81,50 @@ async def delete_chunks(
         .where(DocumentChunk.document_id == document_id, DocumentChunk.owner_id == owner_id)
         .execution_options(synchronize_session=False)
     )
+
+
+async def list_documents(
+    session: AsyncSession,
+    *,
+    owner_id: uuid.UUID,
+    after: tuple[datetime, uuid.UUID] | None,
+    limit: int,
+) -> list[Row[*tuple[Any, ...]]]:
+    """An owner's live documents, newest first, after the cursor.
+
+    Served by documents_owner_created_idx, whose order and WHERE clause match this query
+    (docs/database.md, "Document list"). Only the columns a table shows are read.
+    """
+    query = select(
+        Document.id,
+        Document.title,
+        Document.status,
+        Document.page_count,
+        Document.chunk_count,
+        Document.created_at,
+    ).where(Document.owner_id == owner_id, Document.deleted_at.is_(None))
+    if after is not None:
+        query = query.where(tuple_(Document.created_at, Document.id) < tuple_(*after))
+    result = await session.execute(
+        query.order_by(Document.created_at.desc(), Document.id.desc()).limit(limit)
+    )
+    return list(result.all())
+
+
+async def list_chunks(
+    session: AsyncSession, *, owner_id: uuid.UUID, document_id: uuid.UUID
+) -> list[Row[*tuple[Any, ...]]]:
+    """The stored text of one document in reading order, via document_chunks_doc_index_uidx."""
+    result = await session.execute(
+        select(
+            DocumentChunk.id,
+            DocumentChunk.chunk_index,
+            DocumentChunk.section_label,
+            DocumentChunk.heading,
+            DocumentChunk.content,
+            DocumentChunk.page_start,
+        )
+        .where(DocumentChunk.document_id == document_id, DocumentChunk.owner_id == owner_id)
+        .order_by(DocumentChunk.chunk_index)
+    )
+    return list(result.all())
