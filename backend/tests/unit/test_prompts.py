@@ -1,3 +1,5 @@
+from pydantic import BaseModel
+
 from app.ai.prompts import (
     CHAT_PROMPT_VERSION,
     GAP_REPORT_PROMPT_VERSION,
@@ -8,7 +10,7 @@ from app.ai.prompts import (
     escape_text,
     load_prompt,
 )
-from app.ai.schemas import Turn
+from app.ai.schemas import Evidence, FindingOut, GapReportOut, Turn
 
 
 def user_text(question: str, sources: list[PromptSource], history: list[Turn] | None = None) -> str:
@@ -146,3 +148,23 @@ def test_the_report_prompt_does_not_contain_text_from_the_eval_documents() -> No
 
     for leaked in ("Northwind", "5,000", "2,500", "on-call", "PINEAPPLE", "chargeback"):
         assert leaked not in prompt
+
+
+def limit(model: type[BaseModel], field: str, attribute: str) -> int:
+    metadata = model.model_fields[field].metadata
+    return next(getattr(item, attribute) for item in metadata if hasattr(item, attribute))
+
+
+def test_the_report_prompt_names_every_schema_field_and_states_its_limits() -> None:
+    prompt = load_prompt(GAP_REPORT_PROMPT_VERSION)
+
+    for model in (GapReportOut, FindingOut, Evidence):
+        for name in model.model_fields:
+            assert f'"{name}"' in prompt
+    assert f"at most {limit(GapReportOut, 'summary', 'max_length')} characters" in prompt
+    assert f"at most {limit(GapReportOut, 'findings', 'max_length')} objects" in prompt
+    assert f"at most {limit(FindingOut, 'title', 'max_length')} characters" in prompt
+    assert f"at most {limit(FindingOut, 'description', 'max_length')} characters" in prompt
+    assert f"at most {limit(FindingOut, 'suggested_question', 'max_length')} characters" in prompt
+    low, high = limit(Evidence, "quote", "min_length"), limit(Evidence, "quote", "max_length")
+    assert f"{low} to {high} characters" in prompt

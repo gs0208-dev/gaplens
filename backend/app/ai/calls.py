@@ -75,6 +75,7 @@ async def call_structured[T: BaseModel](
     messages: list[Turn],
     output_model: type[T],
     max_tokens: int,
+    timeout_seconds: float | None = None,
 ) -> StructuredResult[T]:
     """Ask the model for an object of `output_model`, check it, and record every attempt.
 
@@ -87,7 +88,11 @@ async def call_structured[T: BaseModel](
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
             response = await client.complete(
-                system=system, messages=turns, output_model=output_model, max_tokens=max_tokens
+                system=system,
+                messages=turns,
+                output_model=output_model,
+                max_tokens=max_tokens,
+                timeout_seconds=timeout_seconds,
             )
         except LLMError as error:
             _record(

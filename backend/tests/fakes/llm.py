@@ -18,6 +18,7 @@ class RecordedCall:
     messages: list[Turn]
     output_model: type[BaseModel]
     max_tokens: int
+    timeout_seconds: float | None = None
 
     @property
     def user_text(self) -> str:
@@ -78,8 +79,11 @@ class FakeLLM:
         messages: list[Turn],
         output_model: type[BaseModel],
         max_tokens: int,
+        timeout_seconds: float | None = None,
     ) -> LLMResponse:
-        self.calls.append(RecordedCall(system, list(messages), output_model, max_tokens))
+        self.calls.append(
+            RecordedCall(system, list(messages), output_model, max_tokens, timeout_seconds)
+        )
         if not self._script:
             self.reply(**NOT_GROUNDED)
         item = self._script.pop(0)

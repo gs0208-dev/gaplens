@@ -44,6 +44,7 @@ class LLMClient(Protocol):
         messages: list[Turn],
         output_model: type[BaseModel],
         max_tokens: int,
+        timeout_seconds: float | None = None,
     ) -> LLMResponse: ...
 
 
@@ -88,6 +89,7 @@ class AnthropicClient:
         messages: list[Turn],
         output_model: type[BaseModel],
         max_tokens: int,
+        timeout_seconds: float | None = None,
     ) -> LLMResponse:
         client = self._sdk_client()
         output_config: OutputConfigParam = {
@@ -102,6 +104,8 @@ class AnthropicClient:
                 system=system,
                 messages=_to_sdk_messages(messages),
                 output_config=output_config,
+                # None would mean "no timeout" to the SDK; not_given keeps the client's own.
+                timeout=anthropic.not_given if timeout_seconds is None else timeout_seconds,
             )
         except anthropic.APITimeoutError as error:
             raise LLMTimeout from error

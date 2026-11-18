@@ -16,6 +16,34 @@ class ChatAnswerOut(BaseModel):
     grounded: bool
 
 
+class Evidence(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    section_label: str | None = None
+    # Checked against the stored chunks in code (S3-4); the model only proposes it.
+    quote: str = Field(min_length=10, max_length=400)
+
+
+class FindingOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["missing", "unclear", "contradiction"]
+    severity: Literal["high", "medium", "low"]
+    title: str = Field(max_length=160)
+    description: str = Field(max_length=800)
+    evidence: list[Evidence] = Field(default_factory=list)
+    suggested_question: str = Field(max_length=300)
+
+
+class GapReportOut(BaseModel):
+    """What the model must return for a gap report (docs/ai-engineering.md, Gap report)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    summary: str = Field(max_length=800)
+    findings: list[FindingOut] = Field(max_length=40)
+
+
 @dataclass(frozen=True)
 class Turn:
     """One message sent to the model."""

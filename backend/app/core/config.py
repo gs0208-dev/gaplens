@@ -56,6 +56,10 @@ class Settings(BaseSettings):
     anthropic_model: str = "claude-sonnet-5-5"
     llm_timeout_seconds: float = 60.0
     chat_max_tokens: int = 2048
+    # A report reads the whole document and writes up to 40 findings, so it gets more room and
+    # time than a chat answer. Starting values, to be calibrated with the Sprint 4 evals.
+    gap_report_max_tokens: int = 16000
+    gap_report_timeout_seconds: float = 90.0
 
     @property
     def is_production(self) -> bool:

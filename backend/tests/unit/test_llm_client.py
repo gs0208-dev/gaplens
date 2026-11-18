@@ -128,3 +128,22 @@ async def test_a_missing_or_empty_key_is_llm_unavailable_and_nothing_is_sent(
 
     with pytest.raises(LLMUnavailable):
         await ask(AnthropicClient())
+
+
+async def test_a_per_call_timeout_is_forwarded_and_otherwise_the_clients_own_applies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, messages = client_with(reply(), monkeypatch)
+
+    await client.complete(
+        system="s",
+        messages=[Turn("user", "q")],
+        output_model=ChatAnswerOut,
+        max_tokens=10,
+        timeout_seconds=90.0,
+    )
+    assert messages.sent["timeout"] == 90.0
+
+    await ask(client)
+    # None would mean "no timeout" to the SDK, so the sentinel is sent instead.
+    assert messages.sent["timeout"] is anthropic.not_given
