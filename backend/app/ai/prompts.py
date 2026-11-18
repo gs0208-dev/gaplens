@@ -8,6 +8,7 @@ PROMPT_DIRECTORY = Path(__file__).parent / "prompts"
 # Recorded with every call. A prompt is never edited in place: a change is a new file and a new
 # version, so a stored call always says which text it used (AGENTS.md).
 CHAT_PROMPT_VERSION = "chat_answer.v1"
+GAP_REPORT_PROMPT_VERSION = "gap_report.v1"
 
 
 @dataclass(frozen=True)
@@ -15,6 +16,15 @@ class PromptSource:
     """One retrieved chunk as the model sees it."""
 
     number: int
+    section_label: str | None
+    heading: str | None
+    content: str
+
+
+@dataclass(frozen=True)
+class DocumentSection:
+    """One chunk of the whole document, in reading order, as the gap report sees it."""
+
     section_label: str | None
     heading: str | None
     content: str
@@ -58,3 +68,16 @@ def build_chat_messages(
 
     parts.append(f"<question>\n{escape_text(question)}\n</question>")
     return [Turn(role="user", content="\n\n".join(parts))]
+
+
+def build_gap_report_messages(sections: list[DocumentSection]) -> list[Turn]:
+    """The one place document text enters a gap report prompt: escaped, in the user turn."""
+    blocks = []
+    for section in sections:
+        attributes = ""
+        if section.section_label:
+            attributes += f' label="{_escape_attribute(section.section_label)}"'
+        if section.heading:
+            attributes += f' heading="{_escape_attribute(section.heading)}"'
+        blocks.append(f"<section{attributes}>\n{escape_text(section.content)}\n</section>")
+    return [Turn(role="user", content="<document>\n" + "\n".join(blocks) + "\n</document>")]

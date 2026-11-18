@@ -83,7 +83,7 @@ Prompt requirements (the owner writes `gap_report.v1.md`; this is the contract, 
 4. Definitions and one short example for each of the three kinds.
 5. The severity rubric.
 6. Rules: only report what the text supports; quote exactly; do not invent sections; prefer fewer, well-evidenced findings over many weak ones; each finding must end with a question a consultant would ask the client.
-7. Output through the tool only.
+7. Output as one JSON object that matches the schema (structured output, ADR-038), and nothing else.
 
 ## Chat answer
 
