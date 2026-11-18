@@ -70,7 +70,7 @@ Evidence rules enforced in code after the call:
 - `contradiction`: at least two evidence items from different chunks.
 - `unclear`: at least one evidence item.
 - `missing`: evidence optional; the description must say where the information is expected.
-- Each `quote` must be a verbatim substring of a stored chunk, compared after whitespace normalization. The matching chunk is attached to the citation. Failing quotes are dropped. A finding that no longer meets its evidence rule is dropped and counted in `llm_calls` metrics as `invalid_citation`.
+- Each `quote` must be a verbatim substring of a stored chunk, compared after whitespace normalization. The matching chunk is attached to the citation. Failing quotes are dropped. A finding that no longer meets its evidence rule is dropped. The counts (quotes seen, quotes verified, findings dropped) are returned by the verifier and logged in the `analysis.finished` event; `llm_calls` holds no content or metrics of this kind.
 
 Severity rubric (goes into the prompt): high means it can cause financial loss, a compliance breach or a stuck process; medium means different people would handle the same case differently; low means wording or clarity only.
 

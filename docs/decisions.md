@@ -533,3 +533,21 @@ Consequences:
 - The text of the three domain errors says "Answering" because it was written for chat. S3-5 stores its own safe `analyses.error_message`, so the user does not see these.
 - The report is not stored anywhere yet; S3-4 verifies it and S3-5 stores it.
 Alternatives: raising the client-wide timeout to 90 seconds (chat users would wait that long before an error), truncating over-long fields (stores text the model did not write), `messages.parse` (loses token counts on invalid output, ADR-038), a forced tool call (rejected by the model, ADR-038), streaming the reply (more code for a background job nobody watches live).
+
+## ADR-045: How the quotes of a gap report are verified (2026-11-19)
+
+Context: S3-4 is the check that decides which findings of a validated report (ADR-044) may be shown. The model's quotes are only claims until the code finds them in the stored text.
+Decision:
+- `verify_report` in `app/modules/analysis/citations.py` is a pure function: a `GapReportOut` and the stored chunks in, the surviving findings and three counts out. It touches no database and no model, so every rule has a plain unit test. S3-5 builds the chunk list from `list_chunks` and stores the result.
+- A quote passes only if it is found inside one chunk after each run of whitespace is turned into one space. Nothing else is relaxed: case, punctuation and wording must match. The quote is first put in Unicode NFKC form because ingestion did the same to the chunk (ADR-032), so a ligature or a non-breaking space does not cause a false drop. A fuzzy match was rejected on purpose: it would accept a paraphrase, which is exactly what the check is there to catch.
+- The text that is stored is the slice of the chunk, not the model's version. A model that joins two lines with a space still passes, and the citation holds the original lines, so the source can be highlighted later and a citation is always verbatim. The section label also comes from the chunk. The model's label is only a hint for choosing between chunks.
+- The model saw the document as chunks (ADR-043), so a quote must lie inside one chunk. A quote that runs across two chunks is not contiguous text the model could have read, and it is dropped.
+- A quote found in two chunks (the overlap of two windows) goes to the chunk with the label the model gave, otherwise the first in reading order. This keeps the contradiction rule honest: it counts distinct chunks, so two quotes that land in one chunk are one source.
+- Evidence rules by kind: `contradiction` needs verified quotes from two different chunks, `unclear` from one, `missing` from none. A `missing` finding keeps its text when its quotes fail, because it does not depend on them. That its description says where the information is expected cannot be checked by code; it stays a prompt rule.
+- The same quote cited twice in one finding is kept once. Counts are taken before that, so they stay a measure of what the model wrote.
+- The counts are returned, not stored. The contract said they would be "counted in `llm_calls` metrics", but that table holds no content or metrics of this kind and a new column was not worth a migration. S3-5 logs them in `analysis.finished`, and the raw citation validity eval (quotes verified divided by quotes seen) can be computed from them.
+Consequences:
+- Not measured: how often a real model's quotes fail this check. There is no key here; the generation evals in S4-1 measure it against the 0.95 target. If harmless differences turn out to cause drops, loosening is a decision to make from those numbers.
+- When every finding is dropped the result is an empty list with counts. S3-5 must show a visible note rather than an empty report.
+- Findings stay in the model's order. Sorting, near-duplicate removal and positions are S3-5, where they are stored.
+Alternatives: fuzzy or similarity matching (accepts paraphrase), case-insensitive matching (changes the meaning of a quote in a few cases and is not needed), trusting the model's chunk reference (the model can name a chunk that does not contain the quote), searching the whole document text instead of chunks (a quote could span a boundary and have no single source).
