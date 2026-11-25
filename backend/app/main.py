@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.health import router as health_router
 from app.api.router import api_router
@@ -16,19 +17,35 @@ from app.core.logging import configure_logging
 from app.core.rate_limit import register_rate_limiting
 from app.core.request_id import REQUEST_ID_HEADER, RequestIdMiddleware
 from app.db.session import SessionFactory
-from app.modules.ingestion.service import run_sweeper, sweep_stuck_documents
+from app.modules.analysis.service import sweep_stuck_analyses
+from app.modules.ingestion.service import sweep_stuck_documents
 
 logger = logging.getLogger(__name__)
 
 
+async def sweep_stuck_work(session_factory: async_sessionmaker[AsyncSession], when: str) -> None:
+    """Fail documents and analyses abandoned by a restart. One failing sweep does not skip the
+    other, and an error is logged by type only."""
+    for sweep in (sweep_stuck_documents, sweep_stuck_analyses):
+        try:
+            await sweep(session_factory)
+        except Exception as error:
+            logger.error("%s sweep failed error_type=%s", when, type(error).__name__)
+
+
+async def run_sweeper(session_factory: async_sessionmaker[AsyncSession]) -> None:
+    """Sweep now and then until cancelled."""
+    interval_seconds = get_settings().sweep_interval_minutes * 60
+    while True:
+        await asyncio.sleep(interval_seconds)
+        await sweep_stuck_work(session_factory, "periodic")
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    # Documents left in uploaded or processing by a restart are failed at start, then every few
-    # minutes. A database that is down at start must not stop the app: /health/ready reports it.
-    try:
-        await sweep_stuck_documents(SessionFactory)
-    except Exception as error:
-        logger.error("startup sweep failed error_type=%s", type(error).__name__)
+    # Work left unfinished by a restart is failed at start, then every few minutes. A database
+    # that is down at start must not stop the app: /health/ready reports it.
+    await sweep_stuck_work(SessionFactory, "startup")
     sweeper = asyncio.create_task(run_sweeper(SessionFactory))
     try:
         yield

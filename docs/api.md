@@ -29,7 +29,7 @@ Every error response uses this shape (modeled on RFC 9457 problem details):
 
 `code` is a stable machine-readable value. `detail` is safe for display. Validation errors (422) add `errors: [{ "field": "email", "message": "..." }]`. Stack traces and internal messages never appear.
 
-Error codes in use: `validation_error` (422), `email_already_registered` (409), `invalid_credentials` (401), `invalid_access_token` (401), `invalid_refresh_token` (401), `origin_not_allowed` (403), `rate_limited` (429), `internal_error` (500), `file_too_large` (413), `unsupported_file_type` (415), `document_not_ready` (409), `thread_not_found` (404), `invalid_cursor` (422), `llm_unavailable`, `llm_timeout` and `llm_invalid_output` (all 503), `encrypted_pdf`, `pdf_unreadable`, `too_many_pages`, `text_too_long` and `no_extractable_text` (all 422), `duplicate_document` (409), `document_not_found` (404). Add a code to this list in the same commit as the code that returns it.
+Error codes in use: `validation_error` (422), `email_already_registered` (409), `invalid_credentials` (401), `invalid_access_token` (401), `invalid_refresh_token` (401), `origin_not_allowed` (403), `rate_limited` (429), `internal_error` (500), `file_too_large` (413), `unsupported_file_type` (415), `document_not_ready` (409), `thread_not_found` (404), `invalid_cursor` (422), `llm_unavailable`, `llm_timeout` and `llm_invalid_output` (all 503), `encrypted_pdf`, `pdf_unreadable`, `too_many_pages`, `text_too_long` and `no_extractable_text` (all 422), `duplicate_document` (409), `document_not_found` (404), `analysis_already_running` (409), `analysis_not_found` (404), `finding_not_found` (404). Add a code to this list in the same commit as the code that returns it.
 
 Status codes: 400 malformed input, 401 missing or invalid token, 403 request from an origin that is not allowed, 404 not found or not yours, 409 conflict (duplicate upload, analysis already running, email in use), 413 file too large, 415 unsupported file type, 422 validation, 429 rate limit, 500 unexpected, 503 dependency down.
 
@@ -144,12 +144,12 @@ Messages (`GET /threads/{id}/messages`): needs the same token. Messages oldest f
 
 | Method | Path | Notes |
 |---|---|---|
-| POST | `/documents/{id}/analyses` | Starts a gap report. `202 { analysis }`. `409` if one is already running |
-| GET | `/documents/{id}/analyses/latest` | Latest analysis with findings and citations, or `404` |
-| GET | `/analyses/{id}` | Analysis with findings |
-| PATCH | `/findings/{id}` | Body `{ review_status }` with `open`, `confirmed` or `dismissed` |
+| POST | `/documents/{id}/analyses` | Starts a gap report in the background. `202 { analysis }` with status `queued` and no findings. `409 analysis_already_running` if one is queued or running, `409 document_not_ready` unless the document is `ready`, `404 document_not_found` for a missing, deleted or foreign document. Writes an `analysis.start` audit event |
+| GET | `/documents/{id}/analyses/latest` | `{ analysis }`: the newest analysis of the document in any status (so the client can show queued, running and failed), with findings and citations. `404 analysis_not_found` if there is none, `404 document_not_found` for a missing, deleted or foreign document |
+| GET | `/analyses/{id}` | `{ analysis }` with findings. `404 analysis_not_found` for a missing or foreign one |
+| PATCH | `/findings/{id}` | Body `{ review_status }` with `open`, `confirmed` or `dismissed` (other fields are a 422). `200 { finding }`. `404 finding_not_found` for a missing or foreign one |
 
-`analysis`: `{ id, document_id, status, summary, findings_count, error_message, created_at, completed_at, findings: [finding] }`.
+`analysis`: `{ id, document_id, status, summary, findings_count, dropped_findings_count, error_message, created_at, completed_at, findings: [finding] }`. Status moves `queued -> running -> succeeded` or `failed`. `findings` is in display order: severity, then where the evidence is in the document. `dropped_findings_count` is the number of findings removed because their evidence could not be verified; a succeeded report with zero findings and a non-zero count must say so, not look clean. `error_message` is a fixed, safe text on `failed` and `null` otherwise.
 `finding`: `{ id, kind, severity, title, description, suggested_question, review_status, citations: [{ chunk_id, section_label, quote }] }`.
 
 ## Account (Sprint 4)

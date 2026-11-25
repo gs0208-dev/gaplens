@@ -1,4 +1,5 @@
 import asyncio
+import json
 import uuid
 from typing import Any
 
@@ -17,6 +18,7 @@ from tests.api.helpers import (
     without_request_id,
 )
 from tests.fakes.embedder import FakeEmbedder
+from tests.fakes.llm import FakeLLM
 from tests.sop_fixtures import SOP_TEXT
 
 SOP = SOP_TEXT.encode()
@@ -243,3 +245,60 @@ async def test_the_repository_will_not_delete_for_the_wrong_owner(
 
     assert deleted is False
     assert await count(migrated_engine, "SELECT count(*) FROM document_chunks") == 8
+
+
+async def analyze(
+    client: AsyncClient, headers: dict[str, str], document_id: str, fake_llm: FakeLLM
+) -> None:
+    """Run one gap report whose finding cites the document's first chunk."""
+    rows = await client.get(f"{DOCUMENTS_URL}/{document_id}/chunks", headers=headers)
+    quote = rows.json()["items"][0]["content"].split("\n")[0][:120].strip()
+    finding = {
+        "kind": "unclear",
+        "severity": "high",
+        "title": "Derived title",
+        "description": "Derived description.",
+        "evidence": [{"section_label": None, "quote": quote}],
+        "suggested_question": "Derived question?",
+    }
+    fake_llm.reply_text(json.dumps({"summary": "Derived summary.", "findings": [finding]}))
+    response = await client.post(f"{DOCUMENTS_URL}/{document_id}/analyses", headers=headers)
+    assert response.status_code == 202
+
+
+ANALYSIS_TABLES = ("analyses", "findings", "finding_citations")
+
+
+async def test_deleting_a_document_removes_its_analyses_but_keeps_the_llm_call_records(
+    api_client: AsyncClient,
+    headers: dict[str, str],
+    migrated_engine: AsyncEngine,
+    fake_llm: FakeLLM,
+) -> None:
+    document_id = await create_document(api_client, headers)
+    await analyze(api_client, headers, document_id, fake_llm)
+    for table in ANALYSIS_TABLES:
+        assert await count(migrated_engine, f"SELECT count(*) FROM {table}") == 1  # noqa: S608
+
+    await delete(api_client, headers, document_id)
+
+    for table in ANALYSIS_TABLES:
+        assert await count(migrated_engine, f"SELECT count(*) FROM {table}") == 0  # noqa: S608
+    assert await count(migrated_engine, "SELECT count(*) FROM llm_calls") == 1
+
+
+async def test_a_failed_delete_of_another_users_document_leaves_its_analyses(
+    api_client: AsyncClient,
+    headers: dict[str, str],
+    other_account: Account,
+    migrated_engine: AsyncEngine,
+    fake_llm: FakeLLM,
+) -> None:
+    document_id = await create_document(api_client, headers)
+    await analyze(api_client, headers, document_id, fake_llm)
+    other_headers = await auth_headers(api_client, other_account)
+
+    await delete(api_client, other_headers, document_id)
+
+    for table in ANALYSIS_TABLES:
+        assert await count(migrated_engine, f"SELECT count(*) FROM {table}") == 1  # noqa: S608

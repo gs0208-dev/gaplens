@@ -460,6 +460,28 @@ async def test_downgrade_to_0003_removes_only_the_analysis_tables(
     )
 
 
+async def column_names(engine: AsyncEngine, table: str) -> set[str]:
+    async with engine.connect() as connection:
+        result = await connection.execute(
+            text("SELECT column_name FROM information_schema.columns WHERE table_name = :t"),
+            {"t": table},
+        )
+        return {row[0] for row in result}
+
+
+async def test_downgrade_to_0004_removes_only_the_dropped_findings_count(
+    alembic_config: Config, engine: AsyncEngine
+) -> None:
+    await upgrade(alembic_config)
+    assert "dropped_findings_count" in await column_names(engine, "analyses")
+
+    await downgrade(alembic_config, "0004")
+
+    assert "dropped_findings_count" not in await column_names(engine, "analyses")
+    assert "findings_count" in await column_names(engine, "analyses")
+    assert await table_names(engine) == ALL_TABLES
+
+
 async def add_analysis(
     engine: AsyncEngine,
     document_id: uuid.UUID,
@@ -549,14 +571,17 @@ async def test_new_analysis_and_finding_get_the_documented_defaults(
     async with migrated_engine.connect() as connection:
         analysis = (
             await connection.execute(
-                text("SELECT status, findings_count, completed_at, summary FROM analyses")
+                text(
+                    "SELECT status, findings_count, dropped_findings_count, completed_at, summary "
+                    "FROM analyses"
+                )
             )
         ).one()
         review_status = (
             await connection.execute(text("SELECT review_status FROM findings"))
         ).scalar_one()
 
-    assert tuple(analysis) == ("queued", 0, None, None)
+    assert tuple(analysis) == ("queued", 0, 0, None, None)
     assert review_status == "open"
 
 

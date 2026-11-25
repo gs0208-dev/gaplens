@@ -110,7 +110,7 @@ sequenceDiagram
   participant DB as Postgres
   C->>API: POST /api/v1/documents/{id}/analyses
   API->>DB: one running analysis per document, else 409
-  API-->>C: 202 { analysis_id, status queued }
+  API-->>C: 202 { analysis } with status queued
   API->>S: background task
   S->>DB: load all chunks in order
   S->>AI: gap_report prompt, structured output

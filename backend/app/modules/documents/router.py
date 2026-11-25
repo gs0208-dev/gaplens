@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.api.deps import CurrentUser
 from app.core.rate_limit import UPLOAD_LIMIT, limiter, user_key
 from app.db.session import get_session, get_session_factory
+from app.modules.analysis import service as analysis_service
 from app.modules.documents import service
 from app.modules.documents.schemas import (
     ChunkList,
@@ -114,5 +115,11 @@ async def delete_document(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> Response:
     ip = request.client.host if request.client else None
-    await service.delete_document(session, owner_id=current_user.id, document_id=document_id, ip=ip)
+    await service.delete_document(
+        session,
+        owner_id=current_user.id,
+        document_id=document_id,
+        ip=ip,
+        purge=analysis_service.delete_for_document,
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

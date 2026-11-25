@@ -2,6 +2,7 @@ import hashlib
 import re
 import unicodedata
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Any
@@ -26,6 +27,10 @@ SHA256_UNIQUE_INDEX = "documents_owner_sha256_uidx"
 MAX_TITLE_LENGTH = 200
 MAX_FILENAME_LENGTH = 255
 FALLBACK_FILENAME = "document"
+
+# Removes text derived from a document (analyses) in the delete transaction. Passed in by the
+# router, because the analysis module already depends on this one.
+Purge = Callable[[AsyncSession, uuid.UUID, uuid.UUID], Awaitable[None]]
 
 
 @dataclass(frozen=True)
@@ -129,7 +134,12 @@ async def get_document(
 
 
 async def delete_document(
-    session: AsyncSession, *, owner_id: uuid.UUID, document_id: uuid.UUID, ip: str | None
+    session: AsyncSession,
+    *,
+    owner_id: uuid.UUID,
+    document_id: uuid.UUID,
+    ip: str | None,
+    purge: Purge,
 ) -> None:
     deleted = await repository.soft_delete_document(
         session, owner_id=owner_id, document_id=document_id
@@ -139,6 +149,7 @@ async def delete_document(
     # The document row stays for the retention period, but its text must not: a user who
     # deletes a confidential document expects it gone, not kept for 30 days (ADR-036).
     await repository.delete_chunks(session, owner_id=owner_id, document_id=document_id)
+    await purge(session, owner_id, document_id)
     await record_audit_event(
         session,
         action=DOCUMENT_DELETE,

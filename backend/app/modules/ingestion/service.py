@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import time
 import uuid
@@ -153,14 +152,3 @@ async def sweep_stuck_documents(session_factory: SessionFactory) -> int:
     if count:
         logger.warning("failed stuck documents count=%d", count)
     return count
-
-
-async def run_sweeper(session_factory: SessionFactory) -> None:
-    """Sweep now and then until cancelled. An error in one round must not end the loop."""
-    interval_seconds = get_settings().sweep_interval_minutes * 60
-    while True:
-        await asyncio.sleep(interval_seconds)
-        try:
-            await sweep_stuck_documents(session_factory)
-        except Exception as error:
-            logger.error("sweep failed error_type=%s", type(error).__name__)

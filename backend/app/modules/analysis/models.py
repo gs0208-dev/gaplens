@@ -37,6 +37,8 @@ class Analysis(CreatedAtMixin, Base):
     model: Mapped[str]
     summary: Mapped[str | None]
     findings_count: Mapped[int] = mapped_column(server_default=text("0"))
+    # Findings removed because their evidence did not verify, so an empty report is explained.
+    dropped_findings_count: Mapped[int] = mapped_column(server_default=text("0"))
     error_message: Mapped[str | None]
     completed_at: Mapped[datetime | None]
 

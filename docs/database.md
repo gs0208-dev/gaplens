@@ -165,6 +165,7 @@ CREATE TABLE analyses (
   model          text        NOT NULL,
   summary        text,
   findings_count integer     NOT NULL DEFAULT 0,
+  dropped_findings_count integer NOT NULL DEFAULT 0,  -- 0005: findings whose evidence did not verify
   error_message  text,
   created_at     timestamptz NOT NULL DEFAULT now(),
   completed_at   timestamptz
@@ -208,10 +209,10 @@ CREATE INDEX finding_citations_chunk_id_idx   ON finding_citations (chunk_id);
 - Text plus `CHECK` instead of Postgres enums. Adding a value is a one-line migration instead of an `ALTER TYPE`.
 - `owner_id` is repeated on `document_chunks`, `analyses` and `chat_threads`. It is redundant on purpose: every query can filter on it directly, which keeps ownership checks to one predicate and makes a later switch to Row Level Security simple.
 - Findings citations are relational (`finding_citations`) because they are validated, queried and joined. Chat message citations are a `jsonb` snapshot because they are display-only and never queried.
-- Soft delete only on `documents` (`deleted_at`) so a re-upload of the same file works after deletion. Deleting a document also removes its `document_chunks` rows in the same transaction, so the document text does not outlive the delete; the document row itself stays. A background cleanup hard-deletes soft-deleted rows after 30 days, which cascades to analyses and findings (not built yet). Deleting a user cascades everything.
+- Soft delete only on `documents` (`deleted_at`) so a re-upload of the same file works after deletion. Deleting a document also removes its `document_chunks` rows and its `analyses` (findings and citations by cascade) in the same transaction, so neither the document text nor text derived from it outlives the delete; the document row itself stays. A background cleanup hard-deletes soft-deleted rows after 30 days, which cascades to analyses and findings (not built yet). Deleting a user cascades everything.
 - `audit_events.metadata` keys in use: `auth.login_failed` has `reason` and `email_sha256`; every other auth event has an empty object. `document.upload` also has an empty object, `resource_type` `document` and the document id as `resource_id`. `resource_type` is `user` for `auth.register` and `refresh_token_family` (with the family id as `resource_id`) for `auth.refresh_reuse_detected`. The ORM attribute is `event_metadata`, because `metadata` is reserved on SQLAlchemy models.
 - Processing writes `documents.status` with guarded updates (`WHERE status = 'uploaded'` to claim, `WHERE status = 'processing'` to finish or fail), so a document is processed once and a document swept to `failed` cannot be turned `ready` afterwards. The stuck-document sweep updates `uploaded` and `processing` rows whose `updated_at` is older than the cutoff. It scans the small `documents` table; no index on `status` is added until the table is large enough for that to matter.
-- `analyses` has no `updated_at` on purpose (ADR-042): the stuck-analysis sweep uses `created_at`. `findings` and `finding_citations` have no `owner_id`; they are reached through their analysis, so any query that returns findings joins `analyses` and filters on its `owner_id`. The soft delete of a document removes its chunks and, by cascade, the citation quotes, but not yet the findings text or `analyses.summary`; S3-5 closes that.
+- `analyses` has no `updated_at` on purpose (ADR-042): the stuck-analysis sweep uses `created_at`. `findings` and `finding_citations` have no `owner_id`; they are reached through their analysis, so any query that returns findings joins `analyses` and filters on its `owner_id`. The soft delete of a document removes its chunks and its analyses in one transaction (ADR-046).
 - Embedding dimension 384 is tied to the model in `AGENTS.md`. Changing the model means a new migration, re-embedding all chunks, and a new value in `documents.embedding_model`.
 
 ## Query rules
@@ -255,19 +256,21 @@ Why no HNSW index yet: the filter `document_id = ?` narrows the search to a few 
 Latest analysis with findings and citations, two queries (no N+1):
 
 ```sql
--- 1) latest finished analysis for the document
-SELECT id, status, summary, findings_count, created_at, completed_at
+-- 1) latest analysis for the document, any status (the client shows running and failed too)
+SELECT id, status, summary, findings_count, dropped_findings_count, created_at, completed_at
 FROM analyses
 WHERE document_id = :document_id AND owner_id = :owner_id
-ORDER BY created_at DESC
+ORDER BY created_at DESC, id DESC
 LIMIT 1;
 
--- 2) findings and citations in one pass
-SELECT f.id, f.position, f.kind, f.severity, f.title, f.description, f.suggested_question,
-       f.review_status, c.section_label, c.quote
+-- 2) findings and citations in one pass; findings have no owner_id, so the owner is
+--    checked on the analysis in the same query
+SELECT f.id, f.kind, f.severity, f.title, f.description, f.suggested_question,
+       f.review_status, c.chunk_id, c.section_label, c.quote
 FROM findings f
+JOIN analyses a ON a.id = f.analysis_id
 LEFT JOIN finding_citations c ON c.finding_id = f.id
-WHERE f.analysis_id = :analysis_id
+WHERE f.analysis_id = :analysis_id AND a.owner_id = :owner_id
 ORDER BY f.position, c.id;
 ```
 

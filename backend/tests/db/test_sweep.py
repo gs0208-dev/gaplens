@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 import app.main as main_module
 from app.core.config import get_settings
 from app.main import app
+from app.modules.analysis.errors import FAILURE_STUCK
+from app.modules.analysis.service import sweep_stuck_analyses
 from app.modules.ingestion import repository
 from app.modules.ingestion.errors import STUCK_MESSAGE
 from app.modules.ingestion.service import sweep_stuck_documents
@@ -171,3 +173,92 @@ async def test_a_database_error_at_start_does_not_stop_the_app(
 
     assert "startup sweep failed error_type=ConnectionError" in caplog.text
     assert "database is down" not in caplog.text
+
+
+async def add_analysis(
+    engine: AsyncEngine, document_id: uuid.UUID, owner_id: uuid.UUID, *, status: str, age: timedelta
+) -> uuid.UUID:
+    async with engine.begin() as connection:
+        result = await connection.execute(
+            text(
+                "INSERT INTO analyses (document_id, owner_id, prompt_version, model, status, "
+                "created_at) VALUES (:document, :owner, 'gap_report.v1', 'm', :status, "
+                "CAST(:when AS timestamptz)) RETURNING id"
+            ),
+            {
+                "document": document_id,
+                "owner": owner_id,
+                "status": status,
+                "when": datetime.now(UTC) - age,
+            },
+        )
+        return result.scalar_one()
+
+
+async def analysis_state(engine: AsyncEngine, analysis_id: uuid.UUID) -> Any:
+    async with engine.connect() as connection:
+        result = await connection.execute(
+            text("SELECT status, error_message, completed_at FROM analyses WHERE id = :id"),
+            {"id": analysis_id},
+        )
+        return result.one()
+
+
+async def test_old_queued_and_running_analyses_are_failed_and_the_rest_left_alone(
+    migrated_engine: AsyncEngine,
+) -> None:
+    owner = await add_owner(migrated_engine)
+    documents = [
+        await add_document(migrated_engine, owner, status="ready", age=RECENT) for _ in range(5)
+    ]
+    old_queued = await add_analysis(migrated_engine, documents[0], owner, status="queued", age=OLD)
+    old_running = await add_analysis(
+        migrated_engine, documents[1], owner, status="running", age=OLD
+    )
+    recent = await add_analysis(migrated_engine, documents[2], owner, status="running", age=RECENT)
+    finished = await add_analysis(migrated_engine, documents[3], owner, status="succeeded", age=OLD)
+
+    count = await sweep_stuck_analyses(async_sessionmaker(migrated_engine))
+
+    assert count == 2
+    for analysis_id in (old_queued, old_running):
+        state = await analysis_state(migrated_engine, analysis_id)
+        assert (state.status, state.error_message) == ("failed", FAILURE_STUCK)
+        assert state.completed_at is not None
+    assert (await analysis_state(migrated_engine, recent)).status == "running"
+    assert (await analysis_state(migrated_engine, finished)).status == "succeeded"
+
+
+async def test_the_app_sweeps_stuck_analyses_at_start(
+    migrated_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    owner = await add_owner(migrated_engine)
+    document_id = await add_document(migrated_engine, owner, status="ready", age=RECENT)
+    left_by_restart = await add_analysis(
+        migrated_engine, document_id, owner, status="running", age=OLD
+    )
+    monkeypatch.setattr(main_module, "SessionFactory", async_sessionmaker(migrated_engine))
+    monkeypatch.setattr(get_settings(), "sweep_interval_minutes", 60)
+
+    async with app.router.lifespan_context(app):
+        assert (await analysis_state(migrated_engine, left_by_restart)).status == "failed"
+
+
+async def test_a_failing_document_sweep_does_not_skip_the_analysis_sweep(
+    migrated_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    owner = await add_owner(migrated_engine)
+    document_id = await add_document(migrated_engine, owner, status="ready", age=RECENT)
+    left_by_restart = await add_analysis(
+        migrated_engine, document_id, owner, status="queued", age=OLD
+    )
+
+    async def failing_sweep(*args: Any, **kwargs: Any) -> int:
+        raise ConnectionError("database is down")
+
+    monkeypatch.setattr(main_module, "sweep_stuck_documents", failing_sweep)
+    monkeypatch.setattr(main_module, "SessionFactory", async_sessionmaker(migrated_engine))
+    monkeypatch.setattr(get_settings(), "sweep_interval_minutes", 60)
+
+    async with app.router.lifespan_context(app):
+        assert (await analysis_state(migrated_engine, left_by_restart)).status == "failed"
