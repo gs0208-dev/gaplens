@@ -9,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from app.ai.errors import LLMInvalidOutput, LLMTimeout, LLMUnavailable
+from app.core.config import get_settings
 from app.modules.analysis import repository as analysis_repository
 from app.modules.analysis import service as analysis_service
 from app.modules.analysis.errors import (
@@ -22,6 +23,7 @@ from tests.api.helpers import (
     Account,
     audit_rows,
     auth_headers,
+    spend_tokens,
     upload,
     without_request_id,
 )
@@ -272,6 +274,44 @@ async def test_a_new_analysis_can_start_after_the_last_one_finished(
     body = (await latest(api_client, headers, document_id)).json()["analysis"]
     assert body["id"] == second.json()["analysis"]["id"] != first
     assert [f["title"] for f in body["findings"]] == ["Second run"]
+
+
+async def test_over_the_daily_budget_a_start_is_refused_and_leaves_nothing_behind(
+    api_client: AsyncClient,
+    headers: dict[str, str],
+    account: Account,
+    document_id: str,
+    fake_llm: FakeLLM,
+    migrated_engine: AsyncEngine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(get_settings(), "daily_token_budget", 1000)
+    await spend_tokens(migrated_engine, account.email, 1000)
+
+    response = await start(api_client, headers, document_id)
+
+    assert response.status_code == 429
+    assert response.json()["code"] == "daily_budget_exceeded"
+    assert int(response.headers["retry-after"]) >= 1
+    assert fake_llm.calls == []
+    assert await rows(migrated_engine, "SELECT id FROM analyses") == []
+    assert await audit_rows(migrated_engine, "analysis.start") == []
+
+
+async def test_the_sixth_start_in_an_hour_is_rate_limited(
+    api_client: AsyncClient, headers: dict[str, str], document_id: str, fake_llm: FakeLLM
+) -> None:
+    for _ in range(5):
+        fake_llm.reply_text(report())
+        # Each run finishes before the next start, so the one-active rule never refuses one.
+        assert (await start(api_client, headers, document_id)).status_code == 202
+
+    response = await start(api_client, headers, document_id)
+
+    assert response.status_code == 429
+    assert response.json()["code"] == "rate_limited"
+    assert response.headers["retry-after"] == "3600"
+    assert len(fake_llm.calls) == 5
 
 
 @pytest.mark.parametrize("status", ["processing", "failed"])

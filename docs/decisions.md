@@ -591,3 +591,25 @@ Consequences:
 - The chat tests now open the Chat tab first; their assertions are unchanged.
 - Not verified: the look in a real browser at 360 px and 1440 px, keyboard-only use and a screen reader pass (Sprint 4 sign-off), the dark theme (S4-5), and a real report with real findings (no model key).
 Alternatives: Chat as the default tab (the report is the product), optimistic review updates (shows unsaved state), a toast library (a dependency for one message), marking only the section (the user then has to find the words), keeping the previous report visible during a re-run (the API has no list of past analyses).
+
+## ADR-048: Daily token budget and the remaining endpoint limits (2026-11-26)
+
+Context: S3-7 closes Sprint 3. `docs/security.md` promised a per-user daily token budget read from `llm_calls`, 5 report starts per hour and 120 requests per minute for the rest of the API. Only the login, register, upload and chat limits existed. The owner chose a default budget of 500,000 tokens a day.
+Decision:
+- The budget is checked in `app/ai/budget.py`, because `llm_calls` belongs to `app/ai`. One query sums the user's input and output tokens since 00:00 UTC; at or above `DAILY_TOKEN_BUDGET` the request is refused with `429 daily_budget_exceeded`. `Retry-After` is the seconds until the next 00:00 UTC, through the same `response_headers` that `RateLimited` uses.
+- Failed attempts count. A repair attempt or a reply that failed validation was still billed. Rows without counts (a timeout) count as 0. Eval rows have no owner and never count.
+- "Today" starts at 00:00 UTC, computed in Python and passed to the query. The old query in `docs/database.md` used `date_trunc('day', now())`, which follows the database session's time zone. It also summed `input_tokens + output_tokens` without an inner `COALESCE`, so a row with one count missing would have added nothing.
+- Chat checks just before the model call, after retrieval. A question with no sources makes no model call, so it is still answered "not found" over the budget. A report start checks after the document checks and before the analysis row is inserted, so a refused start leaves no row and no audit event.
+- The budget sees only committed rows, so calls in flight are not counted and a user can go over by what is already running. This is accepted: the overshoot is bounded by one active analysis per document, 5 starts per hour and 30 questions per hour. Reserving tokens ahead of a call would need a guess of each call's size and somewhere to keep the reservations; that is not worth it at this scale.
+- The report start gets `@limiter.limit("5/hour", key_func=user_key)`, like chat and upload.
+- The 120 per minute limit is a dependency on the `/api/v1` router (`enforce_api_limit` in `app/core/rate_limit.py`). It is one moving-window count per user, or per IP address without a valid token, shared by every route. It uses the `limits` library already used for the per-email login limit. The plan was slowapi's `default_limits` with `SlowAPIASGIMiddleware`. A test showed that it let every request through: FastAPI 0.162 keeps included routers as `_IncludedRouter` nodes, slowapi 0.1.10 looks for the endpoint in the flat `app.routes`, finds none and treats the request as exempt.
+- The shared limit counts the routes that also have their own limit. Making them skip it would need slowapi's private route table. Their own limits are far below 120 a minute (30 questions an hour, 10 uploads an hour), so counting them changes nothing in practice. The health probes are mounted outside `/api/v1`, so they are never limited, with no exemption list to keep up to date.
+- `EXPLAIN (ANALYZE, BUFFERS)` of the budget query, with 200 users and 100,000 `llm_calls` rows: Bitmap Index Scan on `llm_calls_owner_created_idx`, 500 rows, 6 index buffers, execution 0.46 ms.
+Consequences:
+- The frontend explains the new code in chat and on report start: "You have reached today's limit for answers and reports. Try again in N."
+- Not verified: the real cost per user. 500,000 is a starting value, to be revisited with the token counts from the S4 eval runs. The counters are in memory, so a restart resets the request limits (an accepted risk in `docs/security.md`). The budget is unaffected because it lives in Postgres.
+Alternatives:
+- A budget check in a middleware: it would charge requests that never call the model, such as a "not found" answer.
+- A reservation table: this is a correctness gain only under concurrency the endpoint limits already bound.
+- slowapi `default_limits` with its middleware: it lets every request through with this FastAPI version, as found in the tests.
+- A limit decorator on every route: it is easy to forget on a new route, and slowapi's decorator needs a `request` argument in every handler.

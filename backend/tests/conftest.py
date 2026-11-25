@@ -12,7 +12,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from app.core.config import get_settings
-from app.core.rate_limit import email_failures, limiter
+from app.core.rate_limit import api_requests, email_failures, limiter
 from app.main import app
 
 ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
@@ -29,9 +29,11 @@ def reset_rate_limits() -> Iterator[None]:
     """Rate limit counters live in memory, so one test's requests must not count in the next."""
     limiter.reset()
     email_failures.reset()
+    api_requests.reset()
     yield
     limiter.reset()
     email_failures.reset()
+    api_requests.reset()
 
 
 @pytest.fixture

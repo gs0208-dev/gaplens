@@ -33,6 +33,12 @@ describe('chatError', () => {
     )
   })
 
+  it('says when the daily limit resets', () => {
+    expect(chatError(apiError('daily_budget_exceeded', 5 * 3600 + 30 * 60)).message).toBe(
+      "You have reached today's limit for answers and reports. Try again in 6 hours.",
+    )
+  })
+
   it('asks for a new conversation when the saved one is gone', () => {
     const view = chatError(apiError('thread_not_found'))
 

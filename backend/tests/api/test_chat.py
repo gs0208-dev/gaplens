@@ -18,6 +18,7 @@ from tests.api.helpers import (
     Account,
     auth_headers,
     embedded_text_of_chunk,
+    spend_tokens,
     upload,
     without_request_id,
 )
@@ -582,6 +583,96 @@ async def test_the_thirty_first_question_in_an_hour_is_rate_limited(
     assert response.status_code == 429
     assert response.json()["code"] == "rate_limited"
     assert "retry-after" in response.headers
+
+
+async def test_over_the_daily_budget_the_question_is_refused_before_the_model_is_called(
+    api_client: AsyncClient,
+    headers: dict[str, str],
+    account: Account,
+    document_id: str,
+    question: str,
+    fake_llm: FakeLLM,
+    migrated_engine: AsyncEngine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(get_settings(), "daily_token_budget", 1000)
+    await spend_tokens(migrated_engine, account.email, 1000)
+
+    response = await chat(api_client, headers, document_id, question)
+
+    assert without_request_id(response) == (
+        429,
+        {
+            "type": "about:blank",
+            "title": "Daily limit reached",
+            "status": 429,
+            "code": "daily_budget_exceeded",
+            "detail": "You have used today's allowance for answers and reports. "
+            "It resets at 00:00 UTC.",
+        },
+    )
+    assert 1 <= int(response.headers["retry-after"]) <= 86_400
+    assert fake_llm.calls == []
+    assert len(await table_rows(migrated_engine, "SELECT id FROM llm_calls")) == 1
+    assert await table_rows(migrated_engine, "SELECT id FROM chat_messages") == []
+    assert await table_rows(migrated_engine, "SELECT id FROM chat_threads") == []
+
+
+async def test_just_under_the_daily_budget_the_question_is_answered(
+    api_client: AsyncClient,
+    headers: dict[str, str],
+    account: Account,
+    document_id: str,
+    question: str,
+    fake_llm: FakeLLM,
+    migrated_engine: AsyncEngine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(get_settings(), "daily_token_budget", 1000)
+    await spend_tokens(migrated_engine, account.email, 999)
+    fake_llm.reply("Answer.", [1])
+
+    response = await chat(api_client, headers, document_id, question)
+
+    assert response.status_code == 200
+    assert len(fake_llm.calls) == 1
+
+
+async def test_another_users_spending_does_not_use_up_this_users_budget(
+    api_client: AsyncClient,
+    headers: dict[str, str],
+    other_account: Account,
+    document_id: str,
+    question: str,
+    fake_llm: FakeLLM,
+    migrated_engine: AsyncEngine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(get_settings(), "daily_token_budget", 1000)
+    await spend_tokens(migrated_engine, other_account.email, 5000)
+    fake_llm.reply("Answer.", [1])
+
+    assert (await chat(api_client, headers, document_id, question)).status_code == 200
+
+
+async def test_over_the_budget_a_question_with_no_sources_is_still_answered_not_found(
+    api_client: AsyncClient,
+    headers: dict[str, str],
+    account: Account,
+    document_id: str,
+    fake_llm: FakeLLM,
+    migrated_engine: AsyncEngine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(get_settings(), "daily_token_budget", 1000)
+    monkeypatch.setattr(get_settings(), "retrieval_min_score", 0.999)
+    await spend_tokens(migrated_engine, account.email, 1000)
+
+    response = await chat(api_client, headers, document_id, "Something unrelated entirely")
+
+    assert response.status_code == 200
+    assert response.json()["message"]["content"] == NOT_FOUND_ANSWER
+    assert fake_llm.calls == []
 
 
 async def test_a_document_that_tries_to_instruct_the_model_reaches_it_only_as_escaped_data(

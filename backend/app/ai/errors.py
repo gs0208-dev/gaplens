@@ -24,3 +24,20 @@ class LLMInvalidOutput(LLMError):
     code = "llm_invalid_output"
     title = "Answer could not be produced"
     detail = "The answering service did not return a usable answer. Try again."
+
+
+class DailyBudgetExceeded(DomainError):
+    """The user's model tokens for today are used up. Not an LLMError: the model is fine, the
+    request is refused before it is called."""
+
+    status_code = 429
+    code = "daily_budget_exceeded"
+    title = "Daily limit reached"
+    detail = "You have used today's allowance for answers and reports. It resets at 00:00 UTC."
+
+    def __init__(self, retry_after: int) -> None:
+        super().__init__()
+        self.retry_after = retry_after
+
+    def response_headers(self) -> dict[str, str]:
+        return {"Retry-After": str(self.retry_after)}

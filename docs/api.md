@@ -29,7 +29,7 @@ Every error response uses this shape (modeled on RFC 9457 problem details):
 
 `code` is a stable machine-readable value. `detail` is safe for display. Validation errors (422) add `errors: [{ "field": "email", "message": "..." }]`. Stack traces and internal messages never appear.
 
-Error codes in use: `validation_error` (422), `email_already_registered` (409), `invalid_credentials` (401), `invalid_access_token` (401), `invalid_refresh_token` (401), `origin_not_allowed` (403), `rate_limited` (429), `internal_error` (500), `file_too_large` (413), `unsupported_file_type` (415), `document_not_ready` (409), `thread_not_found` (404), `invalid_cursor` (422), `llm_unavailable`, `llm_timeout` and `llm_invalid_output` (all 503), `encrypted_pdf`, `pdf_unreadable`, `too_many_pages`, `text_too_long` and `no_extractable_text` (all 422), `duplicate_document` (409), `document_not_found` (404), `analysis_already_running` (409), `analysis_not_found` (404), `finding_not_found` (404). Add a code to this list in the same commit as the code that returns it.
+Error codes in use: `validation_error` (422), `email_already_registered` (409), `invalid_credentials` (401), `invalid_access_token` (401), `invalid_refresh_token` (401), `origin_not_allowed` (403), `rate_limited` (429), `internal_error` (500), `file_too_large` (413), `unsupported_file_type` (415), `document_not_ready` (409), `thread_not_found` (404), `invalid_cursor` (422), `llm_unavailable`, `llm_timeout` and `llm_invalid_output` (all 503), `encrypted_pdf`, `pdf_unreadable`, `too_many_pages`, `text_too_long` and `no_extractable_text` (all 422), `duplicate_document` (409), `document_not_found` (404), `analysis_already_running` (409), `analysis_not_found` (404), `finding_not_found` (404), `daily_budget_exceeded` (429). Add a code to this list in the same commit as the code that returns it.
 
 Status codes: 400 malformed input, 401 missing or invalid token, 403 request from an origin that is not allowed, 404 not found or not yours, 409 conflict (duplicate upload, analysis already running, email in use), 413 file too large, 415 unsupported file type, 422 validation, 429 rate limit, 500 unexpected, 503 dependency down.
 
@@ -61,6 +61,10 @@ Me: needs `Authorization: Bearer <access token>`. A missing header, another sche
 Logout: needs the same allowed `Origin` as refresh (`403 origin_not_allowed` otherwise). It revokes every active token of the login that the cookie's token belongs to, even if the cookie holds an older, already-rotated token, and clears the cookie. It always returns `204`, including when the cookie is missing, unknown or already revoked, so logging out twice is harmless. An access token already issued keeps working until it expires, at most 15 minutes, so the client should drop it from memory on logout.
 
 Rate limits: login is 5 requests per minute per IP, and an email address is blocked for up to 15 minutes after 5 failed logins, from any IP. Register is 5 per hour per IP. A limited request gets `429 rate_limited` with a `Retry-After` header in seconds. For the IP limits it is the window length, an upper bound on the wait.
+
+On top of the limits of each route, every `/api/v1` request counts against one shared limit of 120 per minute per user (per IP without a valid token); its `Retry-After` is the seconds until the oldest counted request leaves the window. The health probes are outside `/api/v1` and never limited.
+
+Daily token budget: before a model call for a user (a chat answer, a report start) the server adds up that user's input and output tokens in `llm_calls` since 00:00 UTC. At `DAILY_TOKEN_BUDGET` (default 500,000) or above, the request is refused with `429 daily_budget_exceeded` and a `Retry-After` of the seconds until the next 00:00 UTC; nothing is stored and no model call is made. A question that retrieves no sources makes no model call, so it is still answered "not found".
 
 `user`: `{ id, email, role, created_at }`. Cookie: `refresh_token; HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth`.
 
@@ -144,7 +148,7 @@ Messages (`GET /threads/{id}/messages`): needs the same token. Messages oldest f
 
 | Method | Path | Notes |
 |---|---|---|
-| POST | `/documents/{id}/analyses` | Starts a gap report in the background. `202 { analysis }` with status `queued` and no findings. `409 analysis_already_running` if one is queued or running, `409 document_not_ready` unless the document is `ready`, `404 document_not_found` for a missing, deleted or foreign document. Writes an `analysis.start` audit event |
+| POST | `/documents/{id}/analyses` | Starts a gap report in the background. `202 { analysis }` with status `queued` and no findings. `409 analysis_already_running` if one is queued or running, `409 document_not_ready` unless the document is `ready`, `404 document_not_found` for a missing, deleted or foreign document. At most 5 per hour per user (`429 rate_limited`); `429 daily_budget_exceeded` over the daily token budget, with no row and no audit event. Writes an `analysis.start` audit event |
 | GET | `/documents/{id}/analyses/latest` | `{ analysis }`: the newest analysis of the document in any status (so the client can show queued, running and failed), with findings and citations. `404 analysis_not_found` if there is none, `404 document_not_found` for a missing, deleted or foreign document |
 | GET | `/analyses/{id}` | `{ analysis }` with findings. `404 analysis_not_found` for a missing or foreign one |
 | PATCH | `/findings/{id}` | Body `{ review_status }` with `open`, `confirmed` or `dismissed` (other fields are a 422). `200 { finding }`. `404 finding_not_found` for a missing or foreign one |

@@ -20,6 +20,12 @@ export function startError(error: unknown): ShownError {
       requestId: error.requestId,
     }
   }
+  if (error.code === 'daily_budget_exceeded') {
+    return {
+      message: `You have reached today's limit for answers and reports. Try again in ${formatWait(error.retryAfterSeconds)}.`,
+      requestId: error.requestId,
+    }
+  }
   return {
     message: START_MESSAGES[error.code] ?? 'The report could not be started. Try again.',
     requestId: error.requestId,

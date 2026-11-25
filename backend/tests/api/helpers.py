@@ -186,3 +186,16 @@ async def embedded_text_of_chunk(engine: AsyncEngine, document_id: Any, index: i
             )
         ).one()
     return f"{row.heading}\n{row.content}" if row.heading else str(row.content)
+
+
+async def spend_tokens(engine: AsyncEngine, email: str, tokens: int) -> None:
+    """Record a model call for the user today, as if they had already used that many tokens."""
+    async with engine.begin() as connection:
+        await connection.execute(
+            text(
+                "INSERT INTO llm_calls (owner_id, purpose, model, prompt_version, input_tokens, "
+                "output_tokens, status) SELECT id, 'chat', 'm', 'v', :tokens, 0, 'ok' FROM users "
+                "WHERE email = :email"
+            ),
+            {"email": email, "tokens": tokens},
+        )

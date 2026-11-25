@@ -6,6 +6,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.budget import ensure_within_budget
 from app.ai.calls import call_structured
 from app.ai.client import LLMClient
 from app.ai.prompts import CHAT_PROMPT_VERSION, PromptSource, build_chat_messages, load_prompt
@@ -80,6 +81,7 @@ async def answer_question(
             PromptSource(number, chunk.section_label, chunk.heading, chunk.content)
             for number, chunk in enumerate(chunks, start=1)
         ]
+        await ensure_within_budget(session, owner_id=owner_id)
         result = await call_structured(
             session,
             llm,

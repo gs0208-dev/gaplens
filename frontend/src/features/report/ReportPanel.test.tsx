@@ -405,6 +405,22 @@ describe('starting a report', () => {
     expect(within(alert).getByRole('button', { name: 'Try again' })).toBeInTheDocument()
   })
 
+  it('says when the daily limit resets if a start is refused for it', async () => {
+    const { user } = await open({
+      [LATEST]: () => problem(404, 'analysis_not_found', 'x'),
+      [START]: () => ({
+        ...problem(429, 'daily_budget_exceeded', 'x'),
+        headers: { 'Retry-After': '3000' },
+      }),
+    })
+
+    await user.click(await screen.findByRole('button', { name: 'Generate report' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "You have reached today's limit for answers and reports. Try again in 50 minutes.",
+    )
+  })
+
   it('cannot start before the document is ready, and asks for no report', async () => {
     const { fake } = await open({
       [DOCUMENT]: () => ({

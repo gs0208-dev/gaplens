@@ -274,12 +274,12 @@ WHERE f.analysis_id = :analysis_id AND a.owner_id = :owner_id
 ORDER BY f.position, c.id;
 ```
 
-Daily token budget check (used by the rate limiter before an LLM call):
+Daily token budget check (`app/ai/budget.py`, before every model call made for a user). `:day_start` is 00:00 UTC of today, computed in Python so that "today" does not follow the database session's time zone. The inner `COALESCE` makes a row with only one count (or none, a timeout) add what it has instead of NULL. Served by `llm_calls_owner_created_idx` (bitmap index scan, 0.46 ms for one user's 500 rows among 100,000, ADR-048).
 
 ```sql
-SELECT COALESCE(SUM(input_tokens + output_tokens), 0)
+SELECT COALESCE(SUM(COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)), 0)
 FROM llm_calls
-WHERE owner_id = :owner_id AND created_at >= date_trunc('day', now());
+WHERE owner_id = :owner_id AND created_at >= :day_start;
 ```
 
 ## Retention

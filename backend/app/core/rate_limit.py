@@ -17,7 +17,9 @@ LOGIN_LIMIT = "5/minute"
 REGISTER_LIMIT = "5/hour"
 UPLOAD_LIMIT = "10/hour"
 CHAT_LIMIT = "30/hour"
+ANALYSIS_LIMIT = "5/hour"
 EMAIL_FAILURE_LIMIT = parse("5/15minutes")
+API_LIMIT = parse("120/minute")
 
 # Per IP address. Counters live in memory, which is enough while there is one backend
 # instance (docs/security.md). A moving window avoids the burst a fixed window allows at its edge.
@@ -70,6 +72,33 @@ class EmailFailureLimiter:
 
 
 email_failures = EmailFailureLimiter()
+
+
+class ApiLimiter:
+    """One budget of requests per user (or IP address) shared by every /api/v1 route.
+
+    Not slowapi's default_limits: its middleware cannot find routes inside included routers in
+    this FastAPI version, so it would let every request through (ADR-048).
+    """
+
+    def __init__(self) -> None:
+        self._storage = MemoryStorage()
+        self._strategy = MovingWindowRateLimiter(self._storage)
+
+    def check(self, key: str) -> None:
+        if not self._strategy.hit(API_LIMIT, key):
+            stats = self._strategy.get_window_stats(API_LIMIT, key)
+            raise RateLimited(retry_after=max(1, math.ceil(stats.reset_time - time.time())))
+
+    def reset(self) -> None:
+        self._storage.reset()
+
+
+api_requests = ApiLimiter()
+
+
+async def enforce_api_limit(request: Request) -> None:
+    api_requests.check(user_key(request))
 
 
 def register_rate_limiting(app: FastAPI) -> None:

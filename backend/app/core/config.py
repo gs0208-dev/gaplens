@@ -60,6 +60,8 @@ class Settings(BaseSettings):
     # time than a chat answer. Starting values, to be calibrated with the Sprint 4 evals.
     gap_report_max_tokens: int = 16000
     gap_report_timeout_seconds: float = 90.0
+    # Model tokens (input plus output) one user may spend per UTC day, read from llm_calls.
+    daily_token_budget: int = Field(default=500_000, gt=0)
 
     @property
     def is_production(self) -> bool:

@@ -31,10 +31,13 @@ export function chatError(error: unknown): ChatErrorView {
       startNewThread: false,
     }
   }
+  const wait = formatWait(error.retryAfterSeconds)
   const message =
     error.code === 'rate_limited'
-      ? `You have asked too many questions. Try again in ${formatWait(error.retryAfterSeconds)}.`
-      : (MESSAGES[error.code] ?? 'The question could not be answered. Try again.')
+      ? `You have asked too many questions. Try again in ${wait}.`
+      : error.code === 'daily_budget_exceeded'
+        ? `You have reached today's limit for answers and reports. Try again in ${wait}.`
+        : (MESSAGES[error.code] ?? 'The question could not be answered. Try again.')
   return {
     message,
     requestId: error.requestId,

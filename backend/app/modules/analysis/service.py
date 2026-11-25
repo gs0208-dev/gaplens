@@ -9,6 +9,7 @@ from sqlalchemy import Row
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.ai.budget import ensure_within_budget
 from app.ai.client import LLMClient
 from app.ai.errors import LLMInvalidOutput, LLMTimeout, LLMUnavailable
 from app.ai.gap_report import generate_gap_report
@@ -65,6 +66,7 @@ async def start_analysis(
     )
     if document.status != "ready":
         raise DocumentNotReady
+    await ensure_within_budget(session, owner_id=owner_id)
     try:
         analysis = await repository.create_analysis(
             session,

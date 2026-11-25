@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.client import LLMClient, get_llm_client
 from app.api.deps import CurrentUser
+from app.core.rate_limit import ANALYSIS_LIMIT, limiter, user_key
 from app.db.session import get_session, get_session_factory
 from app.modules.analysis import service
 from app.modules.analysis.schemas import (
@@ -23,7 +24,9 @@ def _response(report: service.Report) -> AnalysisResponse:
     return AnalysisResponse(analysis=analysis.model_copy(update={"findings": report.findings}))
 
 
+# slowapi needs the request argument by this exact name to find the client address.
 @router.post("/documents/{document_id}/analyses", status_code=status.HTTP_202_ACCEPTED)
+@limiter.limit(ANALYSIS_LIMIT, key_func=user_key)
 async def start_analysis(
     request: Request,
     document_id: uuid.UUID,

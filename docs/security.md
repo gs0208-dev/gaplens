@@ -80,9 +80,12 @@ These map to the OWASP Top 10 for LLM applications: prompt injection, sensitive 
 | `POST /documents` | 10 per hour per user |
 | `POST /documents/{id}/analyses` | 5 per hour per user |
 | `POST /documents/{id}/chat` | 30 per hour per user |
-| Everything else | 120 per minute per user |
+| Every `/api/v1` route, the ones above included | 120 per minute per user, shared |
+| Model calls (chat answers, report starts) | `DAILY_TOKEN_BUDGET` tokens per user per UTC day, default 500,000 |
 
-Limits are in-memory (slowapi) while there is one backend instance. With more than one instance, move counters to Postgres or Redis. Behind a proxy, trust forwarded headers only from the platform's proxy addresses so IP limits cannot be spoofed.
+All of these are enforced as of Sprint 3 (S3-7). The health probes are not limited. The route limits use slowapi decorators; the shared limit is a router dependency on the same `limits` library (ADR-048). The token budget is read from `llm_calls` before each model call and can be overshot by the calls already in flight (ADR-048).
+
+Limits are in-memory (slowapi and `limits`) while there is one backend instance. With more than one instance, move counters to Postgres or Redis. Behind a proxy, trust forwarded headers only from the platform's proxy addresses so IP limits cannot be spoofed.
 
 ## Transport and headers
 
