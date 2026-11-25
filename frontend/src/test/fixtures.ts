@@ -64,3 +64,33 @@ export function citation(overrides: Record<string, unknown> = {}) {
     ...overrides,
   }
 }
+
+export function finding(overrides: Record<string, unknown> = {}) {
+  return {
+    id: nextId('finding'),
+    kind: 'unclear',
+    severity: 'high',
+    title: 'Refund limit differs between sections',
+    description: 'Section 3.1 allows INR 5,000 while 5.3 caps it at INR 2,500.',
+    suggested_question: 'Which refund limit applies to L1 agents?',
+    review_status: 'open',
+    citations: [],
+    ...overrides,
+  }
+}
+
+export function analysis(overrides: Record<string, unknown> = {}) {
+  return {
+    id: nextId('analysis'),
+    document_id: 'doc-1',
+    status: 'succeeded',
+    summary: 'A short refund SOP with two conflicting limits.',
+    findings_count: 0,
+    dropped_findings_count: 0,
+    error_message: null,
+    created_at: '2026-11-26T09:00:00Z',
+    completed_at: '2026-11-26T09:01:00Z',
+    findings: [],
+    ...overrides,
+  }
+}

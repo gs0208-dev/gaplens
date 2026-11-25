@@ -13,6 +13,7 @@ const DOCUMENT = `GET /api/v1/documents/${ID}`
 const CHUNKS = `GET /api/v1/documents/${ID}/chunks`
 const THREADS = `GET /api/v1/documents/${ID}/threads?limit=1`
 const CHAT = `POST /api/v1/documents/${ID}/chat`
+const LATEST_REPORT = `GET /api/v1/documents/${ID}/analyses/latest`
 const messagesOf = (thread: string) => `GET /api/v1/threads/${thread}/messages?limit=100`
 
 type Routes = Parameters<typeof stubApi>[0]
@@ -55,6 +56,7 @@ function readyDocument(routes: Routes = {}): Routes {
     [DOCUMENT]: () => ({ body: { document: documentDetails({ id: ID, title: 'Refund SOP' }) } }),
     [CHUNKS]: () => ({ body: { items: [REFUND, ESCALATION] } }),
     [THREADS]: NO_THREADS,
+    [LATEST_REPORT]: () => problem(404, 'analysis_not_found', 'No analysis.'),
     ...routes,
   }
 }
@@ -65,9 +67,11 @@ async function openWorkspace(routes: Routes) {
   return { fake, ...rendered }
 }
 
+/** Opens a ready document on the Chat tab, which these tests are about; Report is the default. */
 async function openReady(routes: Routes = {}) {
   const opened = await openWorkspace(readyDocument(routes))
   await screen.findByRole('heading', { name: 'Refund SOP' })
+  await opened.user.click(screen.getByRole('tab', { name: 'Chat' }))
   return opened
 }
 

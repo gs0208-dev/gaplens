@@ -30,4 +30,9 @@
 
   --danger: #b3261e;
   --success: #17663a;
+
+  /* Finding severity, for badge text and border. All at least 5.6:1 on every surface. */
+  --severity-high: #a4231b;
+  --severity-medium: #8a4f00;
+  --severity-low: #36598c;
 }

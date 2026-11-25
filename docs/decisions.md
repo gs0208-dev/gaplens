@@ -574,3 +574,20 @@ Consequences:
 - Citations have no position column, so within a finding they come back ordered by id: deterministic, but not the order the model gave.
 - Not verified here: a real model run (no key), and real run time against the stuck limit.
 Alternatives: a look-first check for an active analysis (racy), a job table and worker process (more moving parts than one background task needs now, ADR-035), a lazy import of the analysis service inside the documents service (hides a circular dependency), storing a note in `error_message` on a succeeded analysis (mixes two meanings in one column), deciding the note in the client from `findings_count = 0` alone (cannot tell a clean report from an emptied one).
+
+## ADR-047: How the report is shown and reviewed (2026-11-26)
+
+Context: S3-6 builds the Report tab. `docs/design-system.md` listed its contents but left several behaviors open; the owner asked for the best choice on each. The full list of choices is now in that doc under "Report tab"; this records the ones with a trade-off.
+Decision:
+- Report is the tab shown when a workspace opens, because it is the product's main feature. Below 1024 px there is one row of tabs (Document, Report, Chat); from 1024 px up the document is always on the left and the same tab list chooses the right pane. One Radix Tabs root and one grid serve both widths, so there is a single set of panels and a single tab list.
+- Re-running a finished report asks first. The API returns only the newest analysis, so a new run makes the old report and its review statuses unreachable, and each run costs model tokens. Re-running after a failure does not ask, since nothing is lost.
+- Review status is saved, not guessed: no optimistic update. The server can refuse (a deleted finding, a network error), and an optimistic update would show a status that was never stored. The buttons are disabled for the short wait.
+- The copy confirmation is inline ("Copied" on the button, in a live region), not a toast. Sonner is listed in the design system but not installed, and adding a dependency for one confirmation is not worth it (AGENTS.md).
+- The exact quote is marked inside the section, not just the section. Quotes are verbatim slices of the chunk (ADR-045), so a plain substring search finds them; the mark uses a white background with an accent underline so it shows on the selected section's tinted background and does not rely on color alone.
+- The latest report is polled every 2 seconds while queued or running, the same interval as documents. A report is expected to take one to a few minutes, which is 30 to 90 requests, inside the 120 per minute general limit.
+- A 404 `analysis_not_found` from the latest endpoint is "no report yet", not an error; a 409 `analysis_already_running` on start shows the running report instead of an error.
+- Severity colors: three new tokens, each above 5.6:1 on every surface, measured with a script, not by eye.
+Consequences:
+- The chat tests now open the Chat tab first; their assertions are unchanged.
+- Not verified: the look in a real browser at 360 px and 1440 px, keyboard-only use and a screen reader pass (Sprint 4 sign-off), the dark theme (S4-5), and a real report with real findings (no model key).
+Alternatives: Chat as the default tab (the report is the product), optimistic review updates (shows unsaved state), a toast library (a dependency for one message), marking only the section (the user then has to find the words), keeping the previous report visible during a re-run (the API has no list of past analyses).

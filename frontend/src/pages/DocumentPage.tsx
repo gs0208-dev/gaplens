@@ -6,11 +6,23 @@ import { ErrorState } from '@/components/ErrorState'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ChatPanel } from '@/features/chat/ChatPanel'
-import { DocumentText } from '@/features/documents/DocumentText'
+import { DocumentText, type Highlight } from '@/features/documents/DocumentText'
 import { loadError } from '@/features/documents/errors'
 import { useChunks, useDocument } from '@/features/documents/hooks'
 import { StatusBadge } from '@/features/documents/StatusBadge'
+import { ReportPanel } from '@/features/report/ReportPanel'
 import { ApiError } from '@/lib/api'
+import { cn } from '@/lib/utils'
+
+type Pane = 'document' | 'report' | 'chat'
+type SidePane = 'report' | 'chat'
+
+// Matches Tailwind's lg breakpoint. Without matchMedia (tests, old browsers) it counts as narrow.
+function isNarrow(): boolean {
+  return (
+    typeof window.matchMedia !== 'function' || !window.matchMedia('(min-width: 1024px)').matches
+  )
+}
 
 function BackLink() {
   return (
@@ -41,8 +53,10 @@ export function DocumentPage() {
   const document = useDocument(documentId)
   const status = document.data?.status
   const chunks = useChunks(documentId, status === 'ready')
-  const [selectedChunkId, setSelectedChunkId] = useState<string | null>(null)
-  const [pane, setPane] = useState('chat')
+  const [highlight, setHighlight] = useState<Highlight | null>(null)
+  // pane is the tab shown on a narrow screen; side is what the right pane shows on a wide one.
+  const [pane, setPane] = useState<Pane>('report')
+  const [side, setSide] = useState<SidePane>('report')
 
   if (document.isPending) {
     return <WorkspaceSkeleton />
@@ -67,10 +81,21 @@ export function DocumentPage() {
 
   const details = document.data
 
-  function selectCitation(chunkId: string) {
-    setSelectedChunkId(chunkId)
+  function show(next: Highlight) {
+    setHighlight(next)
     // On a narrow screen the text is on another tab, so go there to show the section.
-    setPane('document')
+    if (isNarrow()) {
+      setPane('document')
+    }
+  }
+
+  function changePane(next: string) {
+    if (next === 'document' || next === 'report' || next === 'chat') {
+      setPane(next)
+      if (next !== 'document') {
+        setSide(next)
+      }
+    }
   }
 
   let text
@@ -86,7 +111,7 @@ export function DocumentPage() {
     } else if (chunks.isError) {
       text = <ErrorState {...loadError(chunks.error)} onRetry={() => void chunks.refetch()} />
     } else {
-      text = <DocumentText chunks={chunks.data} highlightedChunkId={selectedChunkId} />
+      text = <DocumentText chunks={chunks.data} highlight={highlight} />
     }
   } else if (details.status === 'failed') {
     text = (
@@ -109,28 +134,55 @@ export function DocumentPage() {
         <h1 className="text-2xl font-semibold break-words">{details.title}</h1>
         <StatusBadge status={details.status} />
       </div>
-      <Tabs value={pane} onValueChange={setPane} className="gap-4">
-        <TabsList className="lg:hidden">
-          <TabsTrigger value="document">Document</TabsTrigger>
-          <TabsTrigger value="chat">Chat</TabsTrigger>
-        </TabsList>
-        <div className="grid gap-6 lg:grid-cols-2">
-          {/* Both panes stay in the page. Below 1024 px the tabs show one at a time; from 1024 px
-              up both are shown side by side, whatever the tabs say. */}
+      <Tabs value={pane} onValueChange={changePane} className="gap-4">
+        {/* One grid for both widths. Below 1024 px the tabs show one pane at a time; from 1024 px
+            up the document is always on the left and the tabs choose the right pane. */}
+        <div className="grid gap-4 lg:grid-cols-2 lg:gap-x-6">
+          <TabsList className="lg:col-start-2 lg:row-start-1">
+            <TabsTrigger value="document" className="lg:hidden">
+              Document
+            </TabsTrigger>
+            <TabsTrigger value="report">Report</TabsTrigger>
+            <TabsTrigger value="chat">Chat</TabsTrigger>
+          </TabsList>
           <TabsContent
             value="document"
             forceMount
-            className="lg:block! lg:max-h-[75vh] lg:overflow-y-auto"
+            className="lg:col-start-1 lg:row-span-2 lg:row-start-1 lg:block! lg:max-h-[75vh] lg:overflow-y-auto"
           >
             <h2 className="mb-3 hidden text-xl font-semibold lg:block">Document</h2>
             {text}
           </TabsContent>
-          <TabsContent value="chat" forceMount className="lg:block! lg:max-h-[75vh]">
+          <TabsContent
+            value="report"
+            forceMount
+            className={cn(
+              'lg:col-start-2 lg:row-start-2 lg:max-h-[75vh] lg:overflow-y-auto',
+              pane === 'document' && side === 'report' && 'lg:block!',
+            )}
+          >
+            <ReportPanel
+              documentId={details.id}
+              status={details.status}
+              selectedQuote={
+                highlight?.quote ? { chunkId: highlight.chunkId, quote: highlight.quote } : null
+              }
+              onSelectQuote={(quote) => show(quote)}
+            />
+          </TabsContent>
+          <TabsContent
+            value="chat"
+            forceMount
+            className={cn(
+              'lg:col-start-2 lg:row-start-2 lg:max-h-[75vh]',
+              pane === 'document' && side === 'chat' && 'lg:block!',
+            )}
+          >
             <ChatPanel
               documentId={details.id}
               status={details.status}
-              selectedChunkId={selectedChunkId}
-              onSelectCitation={selectCitation}
+              selectedChunkId={highlight?.quote === null ? highlight.chunkId : null}
+              onSelectCitation={(chunkId) => show({ chunkId, quote: null })}
             />
           </TabsContent>
         </div>

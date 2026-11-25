@@ -26,6 +26,9 @@
   --color-accent-foreground: var(--foreground);
   --color-destructive: var(--danger);
   --color-success: var(--success);
+  --color-severity-high: var(--severity-high);
+  --color-severity-medium: var(--severity-medium);
+  --color-severity-low: var(--severity-low);
 
   --color-border: var(--border);
   --color-input: var(--border-strong);

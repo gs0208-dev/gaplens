@@ -32,7 +32,7 @@ Reject a design or a pull request if any of these appear.
 ## Layout
 
 - App shell: left sidebar 240 px (collapsible below 1024 px), top bar 48 px, content area. Content max width 1120 px for lists and settings; the document workspace uses the full width.
-- Document workspace: two panes. Left, the document text with section labels and highlight on the cited quote. Right, tabs for Report and Chat. On narrow screens the panes become tabs.
+- Document workspace: two panes. Left, the document text with section labels and highlight on the cited quote. Right, tabs for Report and Chat; Report is selected when the workspace opens. Below 1024 px there is one row of tabs: Document, Report, Chat. Choosing a quote or a source on a narrow screen switches to the Document tab.
 - Spacing scale: 4, 8, 12, 16, 24, 32, 48 px (Tailwind `1, 2, 3, 4, 6, 8, 12`). Nothing else.
 - Responsive: usable at 360 px wide. No horizontal page scroll. Tables turn into stacked rows below 640 px.
 - Grid: align to the spacing scale. Group related controls; separate groups with 24 px or a border, not both.
@@ -52,7 +52,7 @@ Neutral scale (cool gray) with one accent (a deep teal) keeps the tool serious a
 | `severity-high`, `severity-medium`, `severity-low` | Finding severity (text, border and subtle background) |
 | `success`, `warning`, `danger`, `info` | Status messages and badges |
 
-Values in use (light theme, set in S1-7, provisional until S4-5). Only the tokens the screens use so far are defined; `severity-*`, `warning` and `info` are added, with their contrast checked, in the story that first needs them. `danger` and `success` are the status colors defined so far.
+Values in use (light theme, set in S1-7, provisional until S4-5). Only the tokens the screens use so far are defined; `warning` and `info` are added, with their contrast checked, in the story that first needs them. `danger`, `success` and the three `severity-*` colors (S3-6) are defined so far.
 
 | Token | Value | Checked against |
 |---|---|---|
@@ -68,6 +68,9 @@ Values in use (light theme, set in S1-7, provisional until S4-5). Only the token
 | `accent-subtle` | `#e1f1f0` | `accent` text on it 5.4:1 |
 | `danger` | `#b3261e` | text on `surface` 6.54:1, on `background` 6.15:1 |
 | `success` | `#17663a` | text on `surface` 7.00:1, on `background` 6.59:1, on `surface-muted` 6.18:1 (added in S2-8b for the Ready badge) |
+| `severity-high` | `#a4231b` | text on `surface` 7.41:1, `background` 6.97:1, `surface-muted` 6.54:1, `accent-subtle` 6.36:1 (S3-6) |
+| `severity-medium` | `#8a4f00` | text on `surface` 6.56:1, `background` 6.18:1, `surface-muted` 5.79:1, `accent-subtle` 5.64:1 (S3-6) |
+| `severity-low` | `#36598c` | text on `surface` 7.08:1, `background` 6.67:1, `surface-muted` 6.25:1, `accent-subtle` 6.09:1 (S3-6) |
 
 The shadcn/ui components use their own color class names. `src/styles/index.css` maps them to our tokens, so read `bg-primary`, `text-primary` and `ring-ring` as `accent`; `bg-accent` as `accent-subtle` (shadcn uses "accent" for hover and selected backgrounds); `border-input` as `border-strong`; `bg-destructive` and `text-destructive` as `danger`; `text-muted-foreground` as `foreground-muted`. Generated components are changed only to follow this document (no shadows, the 2 px focus ring with a 2 px offset).
 
@@ -115,9 +118,25 @@ Rules:
 | Documents | Table: title, status badge, pages, uploaded date, actions menu. Upload button top right. Empty state: one sentence and the upload button |
 | Upload dialog | File drop area plus a file button, accepted types and size stated, an "Uploading" state while the request runs (a percentage is not possible with `fetch`), validation errors inline. A file over 5 MB is refused in the browser without a request. States that document text is stored in the account and excerpts are sent to Anthropic when chatting |
 | Document workspace | Header with title and status; left document pane; right tabs Report and Chat |
-| Report tab | Summary, counts by severity, filter by kind and severity, findings list. Each finding: title, kind and severity badges, description, evidence quotes with section labels (click scrolls and highlights in the document pane), suggested client question with copy button, status control (open, confirmed, dismissed) |
+| Report tab | Summary, counts by severity, filter by kind and severity, findings list. Each finding: title, kind and severity badges, description, evidence quotes with section labels (click scrolls and highlights in the document pane), suggested client question with copy button, status control (open, confirmed, dismissed). Details below, under Report tab |
 | Chat tab | Message list (a live region), input at the bottom, answers with numbered sources (section label and quote) that mark and scroll to the section in the document pane; not-found answers styled as a neutral note; the last conversation is restored on open; "New conversation" starts another. Errors stay inline with the request id and a retry |
 | Settings | Account email, sign out, delete account (AlertDialog) |
+
+## Report tab
+
+Decided in S3-6 (ADR-047).
+
+- No report yet: one sentence saying what a report is, and the primary button "Generate report". Before the document is ready the button is disabled and a sentence says why.
+- Running (queued or running): a status line with a spinner, "Generating the report. This can take a few minutes." No progress bar, because the API reports no stage. Polled every 2 seconds, like documents.
+- Failed: the error state with the server's fixed `error_message` and "Try again", which starts a new run without a dialog (nothing is lost).
+- Finished: an outline "Run again" button in the header. It opens an AlertDialog first ("Run the report again?"), because a run costs money and the new report replaces the current one and its review statuses.
+- Counts: one line, icon and words per severity ("1 high"), in the severity colors.
+- Empty: "The report found no gaps in this document." when nothing was dropped. When every finding was removed by verification, a neutral note (Info icon) says how many were suggested and why they were removed. When some were removed, a small muted line under the counts says how many.
+- Filters: two labelled groups of buttons, Severity and Kind, each with All, single choice, `aria-pressed`. "No findings match these filters." with "Clear filters" when nothing is left. Dismissed findings stay in the list with their status in words.
+- Findings: a list of rows, all collapsed at first. The row header is a button (`aria-expanded`) with the severity badge, kind badge and title. Expanded: description, evidence (each quote a button, in mono, with its section label), the suggested question in a muted block with "Copy question", and the review status as three buttons (Open, Confirmed, Dismissed). A missing finding without a quote says so.
+- Review status is not optimistic: the buttons are disabled while saving, the server's reply is shown, and a failure keeps the old status with an inline error.
+- Copy: the button reads "Copied" for 2 seconds (polite live region); a failure says "Could not copy. Select the text instead." No toast, so no toast library yet.
+- Quote highlight: the section gets the selected style, and the exact quoted words inside it are marked with a white background and an accent underline (not color alone). Report quotes are verbatim slices of the section, so they are always found; if one is not, only the section is marked. Chat sources still mark the whole section.
 
 ## States
 
